@@ -235,6 +235,25 @@ fn check_uncommitted_changes(path: &str) -> Result<bool, String> {
 fn archive_space(path: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let space_path = Path::new(&path);
     
+    // Validate path is under ~/.space
+    let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
+    let space_root = home_dir.join(".space");
+    
+    let canonical_path = space_path.canonicalize()
+        .map_err(|_| "Invalid path")?;
+    let canonical_root = space_root.canonicalize()
+        .map_err(|_| "Space root directory does not exist")?;
+    
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err("Cannot archive paths outside of ~/.space".to_string());
+    }
+    
+    // Verify it has space metadata
+    let metadata_path = space_path.join(SPACE_METADATA_FILE);
+    if !metadata_path.exists() {
+        return Err("Not a valid space directory (missing metadata)".to_string());
+    }
+    
     if !space_path.exists() {
         return Err("Space directory does not exist".to_string());
     }
@@ -265,6 +284,9 @@ fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
         String::new()
     };
     
+    let mut diffs: Vec<GitDiff> = Vec::new();
+    
+    // Get tracked file changes with numstat
     let mut args = vec!["diff", "--numstat"];
     if !git_dir_arg.is_empty() {
         args.insert(0, &git_dir_arg);
@@ -281,7 +303,6 @@ fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
     }
 
     let numstat = String::from_utf8_lossy(&output.stdout);
-    let mut diffs: Vec<GitDiff> = Vec::new();
 
     for line in numstat.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
@@ -298,10 +319,14 @@ fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
             let diff_output = Command::new("git")
                 .args(&diff_args)
                 .current_dir(path)
-                .output()
-                .map_err(|e| format!("Failed to get diff for {}: {}", file_path, e))?;
+                .output();
 
-            let diff = String::from_utf8_lossy(&diff_output.stdout).to_string();
+            let diff = match diff_output {
+                Ok(output) if output.status.success() => {
+                    String::from_utf8_lossy(&output.stdout).to_string()
+                }
+                _ => String::new(),
+            };
 
             diffs.push(GitDiff {
                 file_path,
@@ -309,6 +334,49 @@ fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
                 additions,
                 deletions,
             });
+        }
+    }
+    
+    // Get untracked files
+    let mut untracked_args = vec!["ls-files", "--others", "--exclude-standard"];
+    if !git_dir_arg.is_empty() {
+        untracked_args.insert(0, &git_dir_arg);
+    }
+    
+    let untracked_output = Command::new("git")
+        .args(&untracked_args)
+        .current_dir(path)
+        .output();
+    
+    if let Ok(output) = untracked_output {
+        if output.status.success() {
+            let untracked_files = String::from_utf8_lossy(&output.stdout);
+            for file_path in untracked_files.lines() {
+                if file_path.is_empty() {
+                    continue;
+                }
+                
+                // Read file content for untracked files
+                let full_path = space_path.join(file_path);
+                let content = fs::read_to_string(&full_path).unwrap_or_default();
+                let line_count = content.lines().count() as i32;
+                
+                // Create a diff-like output for new files
+                let diff = format!(
+                    "diff --git a/{} b/{}\nnew file mode 100644\n--- /dev/null\n+++ b/{}\n{}",
+                    file_path,
+                    file_path,
+                    file_path,
+                    content.lines().map(|l| format!("+{}", l)).collect::<Vec<_>>().join("\n")
+                );
+                
+                diffs.push(GitDiff {
+                    file_path: file_path.to_string(),
+                    diff,
+                    additions: line_count,
+                    deletions: 0,
+                });
+            }
         }
     }
 
@@ -434,6 +502,100 @@ fn start_all_opencode_servers(state: tauri::State<'_, AppState>) -> Result<Vec<O
     Ok(servers)
 }
 
+const CONFIG_FILE: &str = "config.json";
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SpaceConfig {
+    pub cloned_path: String,
+    pub random_name: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub branch_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub created_at: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct AppConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub groq_api_key: Option<String>,
+    #[serde(default)]
+    pub spaces: Vec<SpaceConfig>,
+}
+
+fn get_config_path() -> Result<std::path::PathBuf, String> {
+    let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
+    let space_dir = home_dir.join(".space");
+    if !space_dir.exists() {
+        fs::create_dir_all(&space_dir)
+            .map_err(|e| format!("Failed to create ~/.space directory: {}", e))?;
+    }
+    Ok(space_dir.join(CONFIG_FILE))
+}
+
+#[tauri::command]
+fn get_config() -> Result<AppConfig, String> {
+    let config_path = get_config_path()?;
+    if !config_path.exists() {
+        return Ok(AppConfig::default());
+    }
+    let content = fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse config: {}", e))
+}
+
+#[tauri::command]
+fn save_config(config: AppConfig) -> Result<(), String> {
+    let config_path = get_config_path()?;
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    fs::write(&config_path, content)
+        .map_err(|e| format!("Failed to write config: {}", e))
+}
+
+#[tauri::command]
+fn set_groq_api_key(api_key: String) -> Result<(), String> {
+    let mut config = get_config()?;
+    config.groq_api_key = Some(api_key);
+    save_config(config)
+}
+
+#[tauri::command]
+fn add_space_to_config(cloned_path: String, random_name: String) -> Result<(), String> {
+    let mut config = get_config()?;
+    // Check if space already exists
+    if !config.spaces.iter().any(|s| s.cloned_path == cloned_path) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to get current time: {}", e))?
+            .as_millis() as i64;
+        config.spaces.push(SpaceConfig {
+            cloned_path,
+            random_name,
+            branch_name: None,
+            created_at: Some(now),
+        });
+        save_config(config)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_space_branch_name(cloned_path: String, branch_name: String) -> Result<(), String> {
+    let mut config = get_config()?;
+    if let Some(space) = config.spaces.iter_mut().find(|s| s.cloned_path == cloned_path) {
+        space.branch_name = Some(branch_name);
+        save_config(config)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_space_config(cloned_path: String) -> Result<Option<SpaceConfig>, String> {
+    let config = get_config()?;
+    Ok(config.spaces.iter().find(|s| s.cloned_path == cloned_path).cloned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -442,7 +604,7 @@ pub fn run() {
         .manage(AppState {
             opencode_processes: Mutex::new(HashMap::new()),
         })
-        .invoke_handler(tauri::generate_handler![greet, validate_git_folder, get_git_diffs, clone_repo_to_space, start_opencode_server, get_opencode_port, list_cloned_repos, get_all_opencode_servers, start_all_opencode_servers, archive_space, check_uncommitted_changes])
+        .invoke_handler(tauri::generate_handler![greet, validate_git_folder, get_git_diffs, clone_repo_to_space, start_opencode_server, get_opencode_port, list_cloned_repos, get_all_opencode_servers, start_all_opencode_servers, archive_space, check_uncommitted_changes, get_config, save_config, set_groq_api_key, add_space_to_config, set_space_branch_name, get_space_config])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.maximize();

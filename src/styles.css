@@ -140,9 +140,6 @@
   *, ::after, ::before, ::backdrop, ::file-selector-button {
     border-color: var(--border, currentColor);
   }
-  html {
-    @apply text-sm;
-  }
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
@@ -152,10 +149,12 @@
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
     background: transparent;
+    overscroll-behavior: none;
   }
   body {
     background: transparent;
     color: var(--fg);
+    overscroll-behavior: none;
   }
   #root {
     transform: translateZ(0);

@@ -3,7 +3,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/app-sidebar";
 import AppSidebarNav from "@/components/app-sidebar/nav";
 import WorkspaceSidebar from "@/components/workspace-sidebar";
-import { OpencodeProvider } from "@/contexts/opencode-context";
+import { StoreInitializer } from "@/components/store-initializer";
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -11,7 +11,7 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   return (
-    <OpencodeProvider>
+    <StoreInitializer>
       <SidebarProvider>
         <AppSidebar collapsible="dock" />
         <SidebarInset className="bg-bg">
@@ -22,6 +22,6 @@ function RootComponent() {
         </SidebarInset>
         <WorkspaceSidebar side="right" collapsible="dock" />
       </SidebarProvider>
-    </OpencodeProvider>
+    </StoreInitializer>
   );
 }

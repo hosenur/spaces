@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useOpencode } from "@/contexts/opencode-context";
+import { useConnectionStore } from "@/stores";
 import { Loader } from "@/components/ui/loader";
 
 export const Route = createFileRoute("/space/$spacePath/")({
@@ -7,7 +7,7 @@ export const Route = createFileRoute("/space/$spacePath/")({
 });
 
 function SpaceIndex() {
-  const { currentSpacePath, isServerBooting } = useOpencode();
+  const { currentSpacePath, isServerBooting } = useConnectionStore();
 
   if (!currentSpacePath || isServerBooting) {
     return (

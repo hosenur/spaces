@@ -6,6 +6,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
+import { Hatch } from "ldrs/react";
+import "ldrs/react/Hatch.css";
+import { AnimatePresence, motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuContent, MenuItem } from "@/components/ui/menu";
 import {
@@ -29,6 +32,9 @@ import {
   SidebarLink,
   SidebarMenuTrigger,
 } from "@/components/ui/sidebar";
+import { encodeSpacePath } from "@/lib/space-path";
+import { formatTimeAgo } from "@/lib/time";
+import { useChatStore, useConfigStore, useConnectionStore } from "@/stores";
 
 interface ClonedRepo {
   original_path: string;
@@ -48,6 +54,37 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
   const [archiveModalOpen, setArchiveModalOpen] = useState(false);
   const [pendingArchivePath, setPendingArchivePath] = useState<string | null>(null);
   const navigate = useNavigate();
+  
+  // Subscribe to the spaces state to trigger re-renders when session states change
+  const spaces = useChatStore((state) => state.spaces);
+  
+  // Subscribe to config to trigger re-renders when branch names are updated
+  const config = useConfigStore((state) => state.config);
+  const addSpaceToConfig = useConfigStore((state) => state.addSpaceToConfig);
+  
+  // Get removeServer to clean up connection when archiving
+  const removeServer = useConnectionStore((state) => state.removeServer);
+  
+  // Check if any session in a space is active (typing or sending)
+  function isSpaceActive(spacePath: string): boolean {
+    const space = spaces[spacePath];
+    if (!space) return false;
+    return Object.values(space.sessions).some(
+      (session) => session.isAssistantTyping || session.isSending
+    );
+  }
+  
+  // Get display name for a space (branch name if available, otherwise random name)
+  function getSpaceDisplayName(clonedPath: string, fallbackName: string): string {
+    const spaceConfig = config?.spaces.find((s) => s.cloned_path === clonedPath);
+    return spaceConfig?.branch_name || spaceConfig?.random_name || fallbackName;
+  }
+
+  // Get created_at time for a space
+  function getSpaceCreatedAt(clonedPath: string): number | undefined {
+    const spaceConfig = config?.spaces.find((s) => s.cloned_path === clonedPath);
+    return spaceConfig?.created_at;
+  }
 
   useEffect(() => {
     async function loadExistingRepos() {
@@ -118,8 +155,10 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
             : group
         )
       );
-      // Navigate to space route with base64 encoded path
-      const encodedPath = btoa(encodeURIComponent(clonedRepo.cloned_path));
+      // Add space to config
+      await addSpaceToConfig(clonedRepo.cloned_path, clonedRepo.cloned_name);
+      // Navigate to space route with URL-safe base64 encoded path
+      const encodedPath = encodeSpacePath(clonedRepo.cloned_path);
       navigate({ to: "/space/$spacePath", params: { spacePath: encodedPath } });
     } catch (error) {
       toast.error(error as string);
@@ -127,8 +166,8 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
   }
 
   function handleRepoClick(clonedPath: string) {
-    // Navigate to space route with base64 encoded path
-    const encodedPath = btoa(encodeURIComponent(clonedPath));
+    // Navigate to space route with URL-safe base64 encoded path
+    const encodedPath = encodeSpacePath(clonedPath);
     navigate({ to: "/space/$spacePath", params: { spacePath: encodedPath } });
   }
 
@@ -149,6 +188,8 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
   async function doArchive(clonedPath: string) {
     try {
       await invoke("archive_space", { path: clonedPath });
+      // Remove the server from connection store (Rust already kills the process)
+      removeServer(clonedPath);
       setRepoGroups((prev) =>
         prev
           .map((group) => ({
@@ -197,13 +238,57 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
                 <HugeiconsIcon icon={Add01Icon} data-slot="icon" className="size-4" />
                 <SidebarLabel>New Space</SidebarLabel>
               </SidebarItem>
-              {group.clones.map((clone) => (
-                <SidebarItem key={clone.cloned_path} tooltip={clone.cloned_name}>
+              {group.clones.map((clone) => {
+                const isActive = isSpaceActive(clone.cloned_path);
+                const displayName = getSpaceDisplayName(clone.cloned_path, clone.cloned_name);
+                const createdAt = getSpaceCreatedAt(clone.cloned_path);
+                return (
+                <SidebarItem key={clone.cloned_path} tooltip={displayName}>
                   {({ isCollapsed, isFocused }) => (
                     <>
-                      <SidebarLink href="#" onPress={() => handleRepoClick(clone.cloned_path)}>
-                        <HugeiconsIcon icon={GitMergeIcon} data-slot="icon" className="size-4" />
-                        <SidebarLabel>{clone.cloned_name}</SidebarLabel>
+                      <SidebarLink href="#" onPress={() => handleRepoClick(clone.cloned_path)} className="!items-start">
+                        <AnimatePresence mode="wait">
+                          {isActive ? (
+                            <motion.span
+                              key="loading"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="flex size-4 pt-1"
+                            >
+                              <Hatch size="12" stroke="2" speed="3" color="currentColor" />
+                            </motion.span>
+                          ) : (
+                            <motion.span
+                              key="icon"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="flex pt-1"
+                            >
+                              <HugeiconsIcon icon={GitMergeIcon} data-slot="icon" className="size-4" />
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                        <AnimatePresence mode="wait">
+                          <motion.div
+                            key={displayName}
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 4 }}
+                            transition={{ duration: 0.2 }}
+                            className="flex flex-col min-w-0"
+                          >
+                            <SidebarLabel>{displayName}</SidebarLabel>
+                            {createdAt && (
+                              <span className="text-[10px] text-muted-fg truncate">
+                                {formatTimeAgo(createdAt)}
+                              </span>
+                            )}
+                          </motion.div>
+                        </AnimatePresence>
                       </SidebarLink>
                       {(!isCollapsed || isFocused) && (
                         <Menu>
@@ -230,7 +315,8 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
                     </>
                   )}
                 </SidebarItem>
-              ))}
+                );
+              })}
             </SidebarSection>
           ))}
         </SidebarSectionGroup>

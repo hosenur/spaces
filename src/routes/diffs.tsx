@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PatchDiff } from "@pierre/diffs/react";
-import { useOpencode } from "@/contexts/opencode-context";
+import { useConnectionStore } from "@/stores";
 
 interface GitDiff {
   file_path: string;
@@ -29,7 +29,7 @@ function DiffsComponent() {
   const [diffs, setDiffs] = useState<GitDiff[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { setCurrentSpace } = useOpencode();
+  const { setCurrentSpace } = useConnectionStore();
 
   useEffect(() => {
     if (!folderPath) {
@@ -42,7 +42,6 @@ function DiffsComponent() {
 
     async function initFolder() {
       try {
-        // Fetch git diffs
         const result = await invoke<GitDiff[]>("get_git_diffs", {
           path: folderPath,
         });

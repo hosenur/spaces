@@ -36,6 +36,32 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(AppState::new())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() != "main" {
+                    return;
+                }
+
+                let state = window.state::<AppState>();
+                if !state.try_begin_shutdown() {
+                    api.prevent_close();
+                    return;
+                }
+
+                api.prevent_close();
+
+                let app_handle = window.app_handle().clone();
+                let window_label = window.label().to_string();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let state = app_handle.state::<AppState>();
+                    state.shutdown_opencode_processes();
+                    if let Some(window) = app_handle.get_webview_window(&window_label) {
+                        let _ = window.destroy();
+                    }
+                    app_handle.exit(0);
+                });
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             validate_git_folder,

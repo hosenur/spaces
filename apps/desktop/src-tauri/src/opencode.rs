@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::thread;
+use std::time::{Duration, Instant};
 
 /// Get the opencode binary path.
 /// First tries to find it in ~/.opencode/bin, then falls back to PATH lookup.
@@ -41,26 +44,88 @@ fn get_extended_path() -> String {
     all_paths.join(":")
 }
 
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+fn send_terminate(child: &Child) -> bool {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        unsafe { libc::kill(pid, libc::SIGTERM) == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child;
+        false
+    }
+}
+
+fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> bool {
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    return false;
+                }
+                thread::sleep(SHUTDOWN_POLL_INTERVAL);
+            }
+            Err(_) => return false,
+        }
+    }
+}
+
+fn shutdown_child_process(path: &str, mut child: Child) {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return;
+    }
+
+    let signaled = send_terminate(&child);
+    if signaled && wait_for_child_exit(&mut child, SHUTDOWN_TIMEOUT) {
+        println!("Stopped opencode process for {}", path);
+        return;
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+    println!("Killed opencode process for {}", path);
+}
+
 pub struct AppState {
     pub(crate) opencode_processes: Mutex<HashMap<String, (Child, u16)>>,
+    shutdown_in_progress: AtomicBool,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
             opencode_processes: Mutex::new(HashMap::new()),
+            shutdown_in_progress: AtomicBool::new(false),
+        }
+    }
+
+    pub fn try_begin_shutdown(&self) -> bool {
+        !self.shutdown_in_progress.swap(true, Ordering::SeqCst)
+    }
+
+    pub fn shutdown_opencode_processes(&self) {
+        let mut children = Vec::new();
+        if let Ok(mut processes) = self.opencode_processes.lock() {
+            for (path, (child, _port)) in processes.drain() {
+                children.push((path, child));
+            }
+        }
+
+        for (path, child) in children {
+            shutdown_child_process(&path, child);
         }
     }
 }
 
 impl Drop for AppState {
     fn drop(&mut self) {
-        if let Ok(mut processes) = self.opencode_processes.lock() {
-            for (path, (mut child, _port)) in processes.drain() {
-                let _ = child.kill();
-                println!("Killed opencode process for {}", path);
-            }
-        }
+        self.shutdown_opencode_processes();
     }
 }
 

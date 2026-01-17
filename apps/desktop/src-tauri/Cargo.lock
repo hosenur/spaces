@@ -3852,9 +3852,10 @@ dependencies = [
 
 [[package]]
 name = "spaces"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "dirs 5.0.1",
+ "libc",
  "names",
  "rand 0.9.2",
  "reqwest",

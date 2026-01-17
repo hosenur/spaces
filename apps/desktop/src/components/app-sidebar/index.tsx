@@ -1,4 +1,4 @@
-import React, { type ComponentProps, useState, useEffect } from "react";
+import { type ComponentProps, useState, useEffect } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PackageIcon, GitMergeIcon, Add01Icon, PlugSocketIcon, Archive04Icon, GitForkIcon, CheckListIcon, Settings02Icon } from "@hugeicons/core-free-icons";
 import { EllipsisHorizontalIcon } from "@heroicons/react/16/solid";

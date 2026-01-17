@@ -21,10 +21,10 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
   const navigate = useNavigate();
 
   const port = currentSpacePath ? getPort(currentSpacePath) : undefined;
-  
+
   // Get sessions for the current space only
-  const { sessions, isLoading, error } = currentSpacePath 
-    ? getSpaceSessions(currentSpacePath) 
+  const { sessions, isLoading, error } = currentSpacePath
+    ? getSpaceSessions(currentSpacePath)
     : { sessions: [], isLoading: false, error: null };
 
   async function handleNewSession() {
@@ -40,7 +40,7 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
   }
 
   async function handleRefresh() {
-    if (!port || !currentSpacePath) return;
+    if (!currentSpacePath || !port) return;
     await fetchSessions(port, currentSpacePath);
   }
 
@@ -88,33 +88,37 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
                 Select a space to view sessions
               </div>
             </SidebarSection>
-          ) : isLoading ? (
-            <SidebarSection>
-              <div className="px-4 py-2 text-muted-fg text-xs">
-                Loading sessions...
-              </div>
-            </SidebarSection>
-          ) : error ? (
-            <SidebarSection>
-              <div className="px-4 py-2 text-danger text-xs">
-                {error}
-              </div>
-            </SidebarSection>
-          ) : sessions.length === 0 ? (
-            <SidebarSection>
-              <div className="px-4 py-2 text-muted-fg text-xs">
-                No sessions yet
-              </div>
-            </SidebarSection>
           ) : (
-            <SidebarSection label="Active Sessions">
-              {sessions.map((session) => (
-                <SidebarItem key={session.id} onPress={() => handleSessionClick(session.id)}>
-                  <HugeiconsIcon icon={Message01Icon} data-slot="icon" className="size-4" />
-                  <SidebarLabel>{session.title || `Session ${session.id.slice(0, 8)}`}</SidebarLabel>
-                </SidebarItem>
-              ))}
-            </SidebarSection>
+            <>
+              {isLoading ? (
+                <SidebarSection>
+                  <div className="px-4 py-2 text-muted-fg text-xs">
+                    Loading sessions...
+                  </div>
+                </SidebarSection>
+              ) : error ? (
+                <SidebarSection>
+                  <div className="px-4 py-2 text-danger text-xs">
+                    {error}
+                  </div>
+                </SidebarSection>
+              ) : sessions.length === 0 ? (
+                <SidebarSection>
+                  <div className="px-4 py-2 text-muted-fg text-xs">
+                    No sessions yet
+                  </div>
+                </SidebarSection>
+              ) : (
+                <SidebarSection label="Active Sessions">
+                  {sessions.map((session) => (
+                    <SidebarItem key={session.id} onPress={() => handleSessionClick(session.id)}>
+                      <HugeiconsIcon icon={Message01Icon} data-slot="icon" className="size-4" />
+                      <SidebarLabel>{session.title || `Session ${session.id.slice(0, 8)}`}</SidebarLabel>
+                    </SidebarItem>
+                  ))}
+                </SidebarSection>
+              )}
+            </>
           )}
         </SidebarSectionGroup>
       </SidebarContent>

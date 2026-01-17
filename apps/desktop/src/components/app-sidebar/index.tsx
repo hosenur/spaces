@@ -1,6 +1,6 @@
-import { type ComponentProps, useState, useEffect } from "react";
+import React, { type ComponentProps, useState, useEffect } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { PackageIcon, GitMergeIcon, Add01Icon, PlugSocketIcon, Archive04Icon, GitForkIcon } from "@hugeicons/core-free-icons";
+import { PackageIcon, GitMergeIcon, Add01Icon, PlugSocketIcon, Archive04Icon, GitForkIcon, CheckListIcon, Settings02Icon } from "@hugeicons/core-free-icons";
 import { EllipsisHorizontalIcon } from "@heroicons/react/16/solid";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -216,6 +216,11 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
     toast.info("Fork functionality coming soon");
   }
 
+  function handleTasksClick(clonedPath: string) {
+    const encodedPath = encodeSpacePath(clonedPath);
+    navigate({ to: "/space/$spacePath/tasks", params: { spacePath: encodedPath } });
+  }
+
   return (
     <Sidebar {...props}>
       <SidebarContent>
@@ -230,6 +235,14 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
                 </>
               }
             >
+              <SidebarItem
+                href="#"
+                className="text-muted-fg"
+                onPress={() => handleTasksClick(group.clones[0]?.cloned_path || "")}
+              >
+                <HugeiconsIcon icon={CheckListIcon} data-slot="icon" className="size-4" />
+                <SidebarLabel>Tasks</SidebarLabel>
+              </SidebarItem>
               <SidebarItem
                 href="#"
                 className="text-muted-fg"
@@ -322,7 +335,7 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
         </SidebarSectionGroup>
       </SidebarContent>
 
-      <SidebarFooter className="flex flex-row justify-between gap-4 group-data-[state=collapsed]:flex-col">
+      <SidebarFooter className="flex flex-col gap-2">
         <Button
           onPress={handleSelectFolder}
           intent="outline"
@@ -331,6 +344,16 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
           <HugeiconsIcon icon={PlugSocketIcon} className="size-4" />
           <span className="truncate in-data-[collapsible=dock]:hidden">
             Connect New Repo
+          </span>
+        </Button>
+        <Button
+          onPress={() => navigate({ to: "/settings" })}
+          intent="outline"
+          className="w-full justify-start gap-x-2"
+        >
+          <HugeiconsIcon icon={Settings02Icon} className="size-4" />
+          <span className="truncate in-data-[collapsible=dock]:hidden">
+            Settings
           </span>
         </Button>
       </SidebarFooter>

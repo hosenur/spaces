@@ -1,13 +1,14 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use tauri::Manager;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use tauri::Manager;
 use serde::{Deserialize, Serialize};
 use names::Generator;
 use rand::Rng;
+use uuid::Uuid;
 
 struct AppState {
     opencode_processes: Mutex<HashMap<String, (Child, u16)>>,
@@ -22,6 +23,34 @@ impl Drop for AppState {
             }
         }
     }
+}
+
+fn validate_space_path(path: &str) -> Result<PathBuf, String> {
+    let space_path = PathBuf::from(path);
+
+    let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
+    let space_root = home_dir.join(".space");
+    let canonical_path = space_path
+        .canonicalize()
+        .map_err(|_| "Invalid path")?;
+    let canonical_root = space_root
+        .canonicalize()
+        .map_err(|_| "Space root directory does not exist")?;
+
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err("Cannot access paths outside of ~/.space".to_string());
+    }
+
+    let metadata_path = canonical_path.join(SPACE_METADATA_FILE);
+    if !metadata_path.exists() {
+        return Err("Not a valid space directory (missing metadata)".to_string());
+    }
+
+    Ok(canonical_path)
+}
+
+fn normalize_space_path(path: &str) -> Result<String, String> {
+    Ok(validate_space_path(path)?.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -213,64 +242,39 @@ fn list_cloned_repos() -> Result<Vec<ClonedRepo>, String> {
 
 #[tauri::command]
 fn check_uncommitted_changes(path: &str) -> Result<bool, String> {
-    let space_path = Path::new(path);
-    
-    if !space_path.exists() {
-        return Err("Space directory does not exist".to_string());
-    }
-    
+    let space_path = validate_space_path(path)?;
+
     // Check for uncommitted changes (staged or unstaged)
     let status_output = Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(space_path)
         .output()
         .map_err(|e| format!("Failed to execute git status: {}", e))?;
-    
+
     let has_changes = !String::from_utf8_lossy(&status_output.stdout).trim().is_empty();
-    
+
     Ok(has_changes)
 }
 
 #[tauri::command]
 fn archive_space(path: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let space_path = Path::new(&path);
-    
-    // Validate path is under ~/.space
-    let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
-    let space_root = home_dir.join(".space");
-    
-    let canonical_path = space_path.canonicalize()
-        .map_err(|_| "Invalid path")?;
-    let canonical_root = space_root.canonicalize()
-        .map_err(|_| "Space root directory does not exist")?;
-    
-    if !canonical_path.starts_with(&canonical_root) {
-        return Err("Cannot archive paths outside of ~/.space".to_string());
-    }
-    
-    // Verify it has space metadata
-    let metadata_path = space_path.join(SPACE_METADATA_FILE);
-    if !metadata_path.exists() {
-        return Err("Not a valid space directory (missing metadata)".to_string());
-    }
-    
-    if !space_path.exists() {
-        return Err("Space directory does not exist".to_string());
-    }
-    
+    let canonical_path = validate_space_path(&path)?;
+    let canonical_path_str = canonical_path.to_string_lossy().to_string();
+
     // Kill opencode server if running for this path
     if let Ok(mut processes) = state.opencode_processes.lock() {
-        if let Some((mut child, _)) = processes.remove(&path) {
+        if let Some((mut child, _)) = processes.remove(&canonical_path_str) {
             let _ = child.kill();
         }
     }
-    
+
     // Remove the directory
-    fs::remove_dir_all(space_path)
+    fs::remove_dir_all(canonical_path)
         .map_err(|e| format!("Failed to delete space directory: {}", e))?;
-    
+
     Ok(())
 }
+
 
 #[tauri::command]
 fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
@@ -393,36 +397,41 @@ pub struct OpenCodeServer {
 fn start_opencode_server(path: String, state: tauri::State<'_, AppState>) -> Result<OpenCodeServer, String> {
     let mut processes = state.opencode_processes.lock()
         .map_err(|e| format!("Failed to lock state: {}", e))?;
-    
+    let canonical_path = normalize_space_path(&path)?;
+
     // Check if already running for this path
-    if let Some((_child, port)) = processes.get(&path) {
+    if let Some((_child, port)) = processes.get(&canonical_path) {
         return Ok(OpenCodeServer {
-            path: path.clone(),
+            path: canonical_path.clone(),
             port: *port,
         });
     }
-    
+
     // Generate random port between 10000-60000
     let port: u16 = rand::rng().random_range(10000..60000);
-    
+
     // Start opencode serve as a child process
     let child = Command::new("opencode")
         .args(["serve", "--port", &port.to_string()])
-        .current_dir(&path)
+        .current_dir(&canonical_path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("Failed to start opencode server: {}", e))?;
-    
-    processes.insert(path.clone(), (child, port));
-    
-    Ok(OpenCodeServer { path, port })
+
+    processes.insert(canonical_path.clone(), (child, port));
+
+    Ok(OpenCodeServer {
+        path: canonical_path,
+        port,
+    })
 }
 
 #[tauri::command]
 fn get_opencode_port(path: String, state: tauri::State<'_, AppState>) -> Option<u16> {
     let processes = state.opencode_processes.lock().ok()?;
-    processes.get(&path).map(|(_child, port)| *port)
+    let canonical_path = normalize_space_path(&path).ok()?;
+    processes.get(&canonical_path).map(|(_child, port)| *port)
 }
 
 #[tauri::command]
@@ -441,30 +450,30 @@ fn get_all_opencode_servers(state: tauri::State<'_, AppState>) -> Vec<OpenCodeSe
 fn start_all_opencode_servers(state: tauri::State<'_, AppState>) -> Result<Vec<OpenCodeServer>, String> {
     let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
     let space_dir = home_dir.join(".space");
-    
+
     if !space_dir.exists() {
         return Ok(Vec::new());
     }
-    
+
     let mut servers = Vec::new();
     let mut processes = state.opencode_processes.lock()
         .map_err(|e| format!("Failed to lock state: {}", e))?;
-    
+
     let entries = fs::read_dir(&space_dir)
         .map_err(|e| format!("Failed to read ~/.space directory: {}", e))?;
-    
+
     for entry in entries {
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
         };
         let path = entry.path();
-        
+
         if path.is_dir() {
             let metadata_path = path.join(SPACE_METADATA_FILE);
             if metadata_path.exists() {
-                let path_str = path.to_str().unwrap().to_string();
-                
+                let path_str = path.to_string_lossy().to_string();
+
                 // Skip if already running
                 if processes.contains_key(&path_str) {
                     let port = processes.get(&path_str).map(|(_, p)| *p).unwrap();
@@ -474,10 +483,10 @@ fn start_all_opencode_servers(state: tauri::State<'_, AppState>) -> Result<Vec<O
                     });
                     continue;
                 }
-                
+
                 // Generate random port
                 let port: u16 = rand::rng().random_range(10000..60000);
-                
+
                 // Start opencode serve
                 match Command::new("opencode")
                     .args(["serve", "--port", &port.to_string()])
@@ -498,11 +507,23 @@ fn start_all_opencode_servers(state: tauri::State<'_, AppState>) -> Result<Vec<O
             }
         }
     }
-    
+
     Ok(servers)
 }
 
 const CONFIG_FILE: &str = "config.json";
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Task {
+    pub id: String,
+    pub text: String,
+    pub completed: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct AsanaAuth {
+    pub access_token: String,
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SpaceConfig {
@@ -512,6 +533,8 @@ pub struct SpaceConfig {
     pub branch_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub created_at: Option<i64>,
+    #[serde(default)]
+    pub tasks: Vec<Task>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -520,6 +543,8 @@ pub struct AppConfig {
     pub groq_api_key: Option<String>,
     #[serde(default)]
     pub spaces: Vec<SpaceConfig>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub asana_auth: Option<AsanaAuth>,
 }
 
 fn get_config_path() -> Result<std::path::PathBuf, String> {
@@ -574,6 +599,7 @@ fn add_space_to_config(cloned_path: String, random_name: String) -> Result<(), S
             random_name,
             branch_name: None,
             created_at: Some(now),
+            tasks: Vec::new(),
         });
         save_config(config)?;
     }
@@ -596,6 +622,115 @@ fn get_space_config(cloned_path: String) -> Result<Option<SpaceConfig>, String> 
     Ok(config.spaces.iter().find(|s| s.cloned_path == cloned_path).cloned())
 }
 
+#[tauri::command]
+fn add_task(cloned_path: String, text: String) -> Result<Task, String> {
+    let mut config = get_config()?;
+    let task = Task {
+        id: Uuid::new_v4().to_string(),
+        text,
+        completed: false,
+    };
+    if let Some(space) = config.spaces.iter_mut().find(|s| s.cloned_path == cloned_path) {
+        space.tasks.push(task.clone());
+        save_config(config)?;
+        Ok(task)
+    } else {
+        Err("Space not found".to_string())
+    }
+}
+
+#[tauri::command]
+fn remove_task(cloned_path: String, task_id: String) -> Result<(), String> {
+    let mut config = get_config()?;
+    if let Some(space) = config.spaces.iter_mut().find(|s| s.cloned_path == cloned_path) {
+        space.tasks.retain(|t| t.id != task_id);
+        save_config(config)?;
+        Ok(())
+    } else {
+        Err("Space not found".to_string())
+    }
+}
+
+#[tauri::command]
+fn toggle_task(cloned_path: String, task_id: String) -> Result<(), String> {
+    let mut config = get_config()?;
+    if let Some(space) = config.spaces.iter_mut().find(|s| s.cloned_path == cloned_path) {
+        if let Some(task) = space.tasks.iter_mut().find(|t| t.id == task_id) {
+            task.completed = !task.completed;
+            save_config(config)?;
+            Ok(())
+        } else {
+            Err("Task not found".to_string())
+        }
+    } else {
+        Err("Space not found".to_string())
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AsanaTask {
+    pub gid: String,
+    pub name: String,
+    pub completed: bool,
+    pub due_on: Option<String>,
+}
+
+#[tauri::command]
+fn set_asana_token(token: String) -> Result<(), String> {
+    let mut config = get_config()?;
+    config.asana_auth = Some(AsanaAuth { access_token: token });
+    save_config(config)
+}
+
+#[tauri::command]
+fn get_asana_auth() -> Result<Option<AsanaAuth>, String> {
+    let config = get_config()?;
+    Ok(config.asana_auth)
+}
+
+#[tauri::command]
+fn disconnect_asana() -> Result<(), String> {
+    let mut config = get_config()?;
+    config.asana_auth = None;
+    save_config(config)
+}
+
+#[tauri::command]
+async fn fetch_asana_tasks() -> Result<Vec<AsanaTask>, String> {
+    let config = get_config()?;
+    let auth = config.asana_auth.ok_or("Not connected to Asana")?;
+    
+    let client = reqwest::Client::new();
+    
+    let response = client
+        .get("https://app.asana.com/api/1.0/tasks")
+        .query(&[
+            ("assignee", "me"),
+            ("opt_fields", "name,completed,due_on"),
+            ("completed_since", "now"),
+        ])
+        .header("Authorization", format!("Bearer {}", auth.access_token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch tasks: {}", e))?;
+    
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("Failed to fetch tasks: {}", text));
+    }
+    
+    #[derive(Deserialize)]
+    struct TasksResponse {
+        data: Vec<AsanaTask>,
+    }
+    
+    let tasks_resp: TasksResponse = response.json()
+        .await
+        .map_err(|e| format!("Failed to parse tasks: {}", e))?;
+    
+    Ok(tasks_resp.data)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -604,7 +739,7 @@ pub fn run() {
         .manage(AppState {
             opencode_processes: Mutex::new(HashMap::new()),
         })
-        .invoke_handler(tauri::generate_handler![greet, validate_git_folder, get_git_diffs, clone_repo_to_space, start_opencode_server, get_opencode_port, list_cloned_repos, get_all_opencode_servers, start_all_opencode_servers, archive_space, check_uncommitted_changes, get_config, save_config, set_groq_api_key, add_space_to_config, set_space_branch_name, get_space_config])
+        .invoke_handler(tauri::generate_handler![greet, validate_git_folder, get_git_diffs, clone_repo_to_space, start_opencode_server, get_opencode_port, list_cloned_repos, get_all_opencode_servers, start_all_opencode_servers, archive_space, check_uncommitted_changes, get_config, save_config, set_groq_api_key, add_space_to_config, set_space_branch_name, get_space_config, add_task, remove_task, toggle_task, set_asana_token, get_asana_auth, disconnect_asana, fetch_asana_tasks])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.maximize();

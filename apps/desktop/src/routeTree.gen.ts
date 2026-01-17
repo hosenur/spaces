@@ -9,12 +9,19 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as DiffsRouteImport } from './routes/diffs'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SpaceSpacePathRouteRouteImport } from './routes/space/$spacePath/route'
 import { Route as SpaceSpacePathIndexRouteImport } from './routes/space/$spacePath/index'
+import { Route as SpaceSpacePathTasksRouteImport } from './routes/space/$spacePath/tasks'
 import { Route as SpaceSpacePathSessionSessionIdRouteImport } from './routes/space/$spacePath/session/$sessionId'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DiffsRoute = DiffsRouteImport.update({
   id: '/diffs',
   path: '/diffs',
@@ -35,6 +42,11 @@ const SpaceSpacePathIndexRoute = SpaceSpacePathIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SpaceSpacePathRouteRoute,
 } as any)
+const SpaceSpacePathTasksRoute = SpaceSpacePathTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => SpaceSpacePathRouteRoute,
+} as any)
 const SpaceSpacePathSessionSessionIdRoute =
   SpaceSpacePathSessionSessionIdRouteImport.update({
     id: '/session/$sessionId',
@@ -45,13 +57,17 @@ const SpaceSpacePathSessionSessionIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/diffs': typeof DiffsRoute
+  '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
+  '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath/': typeof SpaceSpacePathIndexRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/diffs': typeof DiffsRoute
+  '/settings': typeof SettingsRoute
+  '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath': typeof SpaceSpacePathIndexRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
@@ -59,7 +75,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/diffs': typeof DiffsRoute
+  '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
+  '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath/': typeof SpaceSpacePathIndexRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
@@ -68,20 +86,26 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/diffs'
+    | '/settings'
     | '/space/$spacePath'
+    | '/space/$spacePath/tasks'
     | '/space/$spacePath/'
     | '/space/$spacePath/session/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/diffs'
+    | '/settings'
+    | '/space/$spacePath/tasks'
     | '/space/$spacePath'
     | '/space/$spacePath/session/$sessionId'
   id:
     | '__root__'
     | '/'
     | '/diffs'
+    | '/settings'
     | '/space/$spacePath'
+    | '/space/$spacePath/tasks'
     | '/space/$spacePath/'
     | '/space/$spacePath/session/$sessionId'
   fileRoutesById: FileRoutesById
@@ -89,11 +113,19 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DiffsRoute: typeof DiffsRoute
+  SettingsRoute: typeof SettingsRoute
   SpaceSpacePathRouteRoute: typeof SpaceSpacePathRouteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/diffs': {
       id: '/diffs'
       path: '/diffs'
@@ -122,6 +154,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpaceSpacePathIndexRouteImport
       parentRoute: typeof SpaceSpacePathRouteRoute
     }
+    '/space/$spacePath/tasks': {
+      id: '/space/$spacePath/tasks'
+      path: '/tasks'
+      fullPath: '/space/$spacePath/tasks'
+      preLoaderRoute: typeof SpaceSpacePathTasksRouteImport
+      parentRoute: typeof SpaceSpacePathRouteRoute
+    }
     '/space/$spacePath/session/$sessionId': {
       id: '/space/$spacePath/session/$sessionId'
       path: '/session/$sessionId'
@@ -133,11 +172,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface SpaceSpacePathRouteRouteChildren {
+  SpaceSpacePathTasksRoute: typeof SpaceSpacePathTasksRoute
   SpaceSpacePathIndexRoute: typeof SpaceSpacePathIndexRoute
   SpaceSpacePathSessionSessionIdRoute: typeof SpaceSpacePathSessionSessionIdRoute
 }
 
 const SpaceSpacePathRouteRouteChildren: SpaceSpacePathRouteRouteChildren = {
+  SpaceSpacePathTasksRoute: SpaceSpacePathTasksRoute,
   SpaceSpacePathIndexRoute: SpaceSpacePathIndexRoute,
   SpaceSpacePathSessionSessionIdRoute: SpaceSpacePathSessionSessionIdRoute,
 }
@@ -148,6 +189,7 @@ const SpaceSpacePathRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DiffsRoute: DiffsRoute,
+  SettingsRoute: SettingsRoute,
   SpaceSpacePathRouteRoute: SpaceSpacePathRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport

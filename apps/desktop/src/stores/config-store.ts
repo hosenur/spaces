@@ -1,16 +1,28 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 
+export interface Task {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 export interface SpaceConfig {
   cloned_path: string;
   random_name: string;
   branch_name?: string;
   created_at?: number;
+  tasks: Task[];
+}
+
+export interface AsanaAuth {
+  access_token: string;
 }
 
 export interface AppConfig {
   groq_api_key?: string;
   spaces: SpaceConfig[];
+  asana_auth?: AsanaAuth;
 }
 
 interface ConfigState {
@@ -23,6 +35,9 @@ interface ConfigState {
   setSpaceBranchName: (clonedPath: string, branchName: string) => Promise<void>;
   getSpaceConfig: (clonedPath: string) => SpaceConfig | undefined;
   setShowApiKeyModal: (show: boolean) => void;
+  addTask: (clonedPath: string, text: string) => Promise<Task | undefined>;
+  removeTask: (clonedPath: string, taskId: string) => Promise<void>;
+  toggleTask: (clonedPath: string, taskId: string) => Promise<void>;
 }
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
@@ -68,7 +83,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         return {
           config: {
             ...state.config,
-            spaces: [...state.config.spaces, { cloned_path: clonedPath, random_name: randomName, created_at: now }],
+            spaces: [...state.config.spaces, { cloned_path: clonedPath, random_name: randomName, created_at: now, tasks: [] }],
           },
         };
       });
@@ -102,5 +117,71 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   setShowApiKeyModal: (show: boolean) => {
     set({ showApiKeyModal: show });
+  },
+
+  addTask: async (clonedPath: string, text: string) => {
+    try {
+      const task = await invoke<Task>("add_task", { clonedPath, text });
+      set((state) => {
+        if (!state.config) return state;
+        return {
+          config: {
+            ...state.config,
+            spaces: state.config.spaces.map((s) =>
+              s.cloned_path === clonedPath ? { ...s, tasks: [...(s.tasks || []), task] } : s
+            ),
+          },
+        };
+      });
+      return task;
+    } catch (err) {
+      console.error("Failed to add task:", err);
+      return undefined;
+    }
+  },
+
+  removeTask: async (clonedPath: string, taskId: string) => {
+    try {
+      await invoke("remove_task", { clonedPath, taskId });
+      set((state) => {
+        if (!state.config) return state;
+        return {
+          config: {
+            ...state.config,
+            spaces: state.config.spaces.map((s) =>
+              s.cloned_path === clonedPath ? { ...s, tasks: (s.tasks || []).filter((t) => t.id !== taskId) } : s
+            ),
+          },
+        };
+      });
+    } catch (err) {
+      console.error("Failed to remove task:", err);
+    }
+  },
+
+  toggleTask: async (clonedPath: string, taskId: string) => {
+    try {
+      await invoke("toggle_task", { clonedPath, taskId });
+      set((state) => {
+        if (!state.config) return state;
+        return {
+          config: {
+            ...state.config,
+            spaces: state.config.spaces.map((s) =>
+              s.cloned_path === clonedPath
+                ? {
+                    ...s,
+                    tasks: (s.tasks || []).map((t) =>
+                      t.id === taskId ? { ...t, completed: !t.completed } : t
+                    ),
+                  }
+                : s
+            ),
+          },
+        };
+      });
+    } catch (err) {
+      console.error("Failed to toggle task:", err);
+    }
   },
 }));

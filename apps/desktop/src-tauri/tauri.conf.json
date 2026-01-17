@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:*"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* https://github.com https://api.github.com"
     }
   },
   "bundle": {
@@ -38,6 +38,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZEQTM5MTc2RTBGNzg3N0UKUldSK2gvZmdkcEdqYlFrdkYraGp0UnRpeHFJTXQ0OVpzNTRtUzNIa0NBMWZnc3F6cm1zSDVnRFMK",
+      "endpoints": [
+        "https://github.com/hosenur/spaces/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

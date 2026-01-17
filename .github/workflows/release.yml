@@ -99,6 +99,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
           args: ${{ matrix.args }}
@@ -132,10 +134,50 @@ jobs:
         run: |
           mkdir -p release-assets
           
-          # Find and copy all release files
-          find artifacts -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.msi" -o -name "*.exe" \) -exec cp {} release-assets/ \;
+          # Find and copy all release files including signatures
+          find artifacts -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.app.tar.gz.sig" -o -name "*.AppImage" -o -name "*.AppImage.sig" -o -name "*.deb" -o -name "*.msi" -o -name "*.msi.sig" -o -name "*.exe" -o -name "*.nsis.zip" -o -name "*.nsis.zip.sig" \) -exec cp {} release-assets/ \;
           
           ls -la release-assets/
+
+      - name: Generate latest.json for updater
+        run: |
+          VERSION="${{ needs.bump-version.outputs.new_version }}"
+          
+          # Initialize the platforms object
+          PLATFORMS='{}'
+          
+          # Check for macOS aarch64 bundle
+          if [ -f "release-assets/spaces_${VERSION}_aarch64.app.tar.gz" ]; then
+            SIG=$(cat "release-assets/spaces_${VERSION}_aarch64.app.tar.gz.sig" 2>/dev/null || echo "")
+            PLATFORMS=$(echo "$PLATFORMS" | jq --arg sig "$SIG" --arg url "https://github.com/hosenur/spaces/releases/download/v${VERSION}/spaces_${VERSION}_aarch64.app.tar.gz" \
+              '. + {"darwin-aarch64": {"signature": $sig, "url": $url}}')
+          fi
+          
+          # Check for macOS x86_64 bundle
+          if [ -f "release-assets/spaces_${VERSION}_x64.app.tar.gz" ]; then
+            SIG=$(cat "release-assets/spaces_${VERSION}_x64.app.tar.gz.sig" 2>/dev/null || echo "")
+            PLATFORMS=$(echo "$PLATFORMS" | jq --arg sig "$SIG" --arg url "https://github.com/hosenur/spaces/releases/download/v${VERSION}/spaces_${VERSION}_x64.app.tar.gz" \
+              '. + {"darwin-x86_64": {"signature": $sig, "url": $url}}')
+          fi
+          
+          # Check for Windows NSIS bundle
+          if [ -f "release-assets/spaces_${VERSION}_x64-setup.nsis.zip" ]; then
+            SIG=$(cat "release-assets/spaces_${VERSION}_x64-setup.nsis.zip.sig" 2>/dev/null || echo "")
+            PLATFORMS=$(echo "$PLATFORMS" | jq --arg sig "$SIG" --arg url "https://github.com/hosenur/spaces/releases/download/v${VERSION}/spaces_${VERSION}_x64-setup.nsis.zip" \
+              '. + {"windows-x86_64": {"signature": $sig, "url": $url}}')
+          fi
+          
+          # Check for Linux AppImage
+          if [ -f "release-assets/spaces_${VERSION}_amd64.AppImage" ]; then
+            SIG=$(cat "release-assets/spaces_${VERSION}_amd64.AppImage.sig" 2>/dev/null || echo "")
+            PLATFORMS=$(echo "$PLATFORMS" | jq --arg sig "$SIG" --arg url "https://github.com/hosenur/spaces/releases/download/v${VERSION}/spaces_${VERSION}_amd64.AppImage" \
+              '. + {"linux-x86_64": {"signature": $sig, "url": $url}}')
+          fi
+          
+          # Create the final latest.json
+          echo "{\"version\": \"v${VERSION}\", \"notes\": \"See release notes on GitHub\", \"pub_date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"platforms\": $PLATFORMS}" | jq . > release-assets/latest.json
+          
+          cat release-assets/latest.json
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

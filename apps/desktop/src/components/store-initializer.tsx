@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useConnectionStore, useSessionStore, useConfigStore } from "@/stores";
 import { ApiKeyModal } from "@/components/api-key-modal";
+import { UpdateChecker } from "@/components/update-checker";
 
 interface StoreInitializerProps {
   children: ReactNode;
@@ -35,6 +36,7 @@ export function StoreInitializer({ children }: StoreInitializerProps) {
     <>
       {children}
       <ApiKeyModal />
+      <UpdateChecker />
     </>
   );
 }

@@ -25,7 +25,7 @@ pub struct GitDiff {
 const MAX_UNTRACKED_BYTES: u64 = 256 * 1024;
 
 fn read_text_file_snippet(path: &Path, max_bytes: u64) -> (Option<String>, bool) {
-    let mut file = match fs::File::open(path) {
+    let file = match fs::File::open(path) {
         Ok(file) => file,
         Err(_) => return (None, false),
     };

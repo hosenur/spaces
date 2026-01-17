@@ -2,9 +2,44 @@ use crate::helpers::{normalize_space_path, space_root, SPACE_METADATA_FILE};
 use rand::Rng;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+
+/// Get the opencode binary path.
+/// First tries to find it in ~/.opencode/bin, then falls back to PATH lookup.
+fn get_opencode_binary() -> String {
+    if let Some(home) = dirs::home_dir() {
+        let opencode_path = home.join(".opencode").join("bin").join("opencode");
+        if opencode_path.exists() {
+            return opencode_path.to_string_lossy().to_string();
+        }
+    }
+    // Fall back to just "opencode" and hope it's in PATH
+    "opencode".to_string()
+}
+
+/// Get an extended PATH that includes common binary directories.
+/// This is needed because macOS apps launched from Finder don't inherit the shell's PATH.
+fn get_extended_path() -> String {
+    let current_path = env::var("PATH").unwrap_or_default();
+    let home = dirs::home_dir().map(|h| h.to_string_lossy().to_string()).unwrap_or_default();
+
+    let extra_paths = [
+        format!("{}/.opencode/bin", home),
+        format!("{}/.local/bin", home),
+        format!("{}/bin", home),
+        "/usr/local/bin".to_string(),
+        "/opt/homebrew/bin".to_string(),
+    ];
+
+    let mut all_paths: Vec<String> = extra_paths.into_iter().collect();
+    if !current_path.is_empty() {
+        all_paths.push(current_path);
+    }
+    all_paths.join(":")
+}
 
 pub struct AppState {
     pub(crate) opencode_processes: Mutex<HashMap<String, (Child, u16)>>,
@@ -55,9 +90,10 @@ pub fn start_opencode_server(
 
     let port: u16 = rand::rng().random_range(10000..60000);
 
-    let child = Command::new("opencode")
+    let child = Command::new(get_opencode_binary())
         .args(["serve", "--port", &port.to_string()])
         .current_dir(&canonical_path)
+        .env("PATH", get_extended_path())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -135,9 +171,10 @@ pub fn start_all_opencode_servers(
 
                 let port: u16 = rand::rng().random_range(10000..60000);
 
-                match Command::new("opencode")
+                match Command::new(get_opencode_binary())
                     .args(["serve", "--port", &port.to_string()])
                     .current_dir(&path)
+                    .env("PATH", get_extended_path())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .spawn()

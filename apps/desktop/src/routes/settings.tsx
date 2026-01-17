@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { Tabs, TabList, Tab, TabPanel } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import {
   Modal,
   ModalBody,
@@ -51,6 +53,11 @@ function SettingsPage() {
   const [token, setToken] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isAsanaModalOpen, setIsAsanaModalOpen] = useState(false);
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const [groqToken, setGroqToken] = useState("");
   const [isSavingGroq, setIsSavingGroq] = useState(false);
@@ -128,6 +135,58 @@ function SettingsPage() {
     } catch (err) {
       console.error("Failed to disconnect from Groq:", err);
       toast.error(err as string);
+    }
+  }
+
+  async function handleCheckForUpdates() {
+    setIsCheckingUpdate(true);
+    try {
+      const available = await check();
+      if (available) {
+        setUpdate(available);
+        setIsUpdateModalOpen(true);
+      } else {
+        toast.success("You're up to date");
+      }
+    } catch (err) {
+      console.error("Failed to check for updates:", err);
+      toast.error("Failed to check for updates");
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  }
+
+  async function handleInstallUpdate() {
+    if (!update) return;
+
+    setIsUpdating(true);
+    setDownloadProgress(0);
+    try {
+      let downloaded = 0;
+      let contentLength = 0;
+
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            contentLength = event.data.contentLength ?? 0;
+            break;
+          case "Progress":
+            downloaded += event.data.chunkLength;
+            if (contentLength > 0) {
+              setDownloadProgress(Math.round((downloaded / contentLength) * 100));
+            }
+            break;
+          case "Finished":
+            setDownloadProgress(100);
+            break;
+        }
+      });
+
+      await relaunch();
+    } catch (err) {
+      console.error("Failed to install update:", err);
+      toast.error("Failed to install update");
+      setIsUpdating(false);
     }
   }
 
@@ -264,7 +323,44 @@ function SettingsPage() {
         </TabPanel>
 
         <TabPanel id="general" className="pt-6">
-          <p className="text-muted-fg">General settings coming soon.</p>
+          <div className="space-y-6">
+            <div className="p-4 rounded-lg flex items-center justify-between gap-4">
+              <div>
+                <h3 className="font-medium">Updates</h3>
+                <p className="text-sm text-muted-fg">
+                  Check for updates and install the latest version.
+                </p>
+              </div>
+              <Button
+                intent="outline"
+                onPress={handleCheckForUpdates}
+                isDisabled={isCheckingUpdate}
+              >
+                {isCheckingUpdate ? "Checking..." : "Check for updates"}
+              </Button>
+            </div>
+          </div>
+
+          <Modal isOpen={isUpdateModalOpen} onOpenChange={setIsUpdateModalOpen}>
+            <ModalContent size="sm">
+              <ModalHeader>
+                <ModalTitle>Update Available</ModalTitle>
+                <ModalDescription>
+                  {update ? `Version ${update.version} is ready to install.` : "An update is ready to install."}
+                </ModalDescription>
+              </ModalHeader>
+              <ModalFooter>
+                <ModalClose>Later</ModalClose>
+                <Button
+                  intent="primary"
+                  onPress={handleInstallUpdate}
+                  isDisabled={isUpdating}
+                >
+                  {isUpdating ? `Downloading... ${downloadProgress}%` : "Update Now"}
+                </Button>
+              </ModalFooter>
+            </ModalContent>
+          </Modal>
         </TabPanel>
       </Tabs>
     </div>

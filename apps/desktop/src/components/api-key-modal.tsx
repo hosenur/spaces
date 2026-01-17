@@ -10,6 +10,7 @@ import {
   ModalFooter,
 } from "@/components/ui/modal";
 import { useConfigStore } from "@/stores";
+import { toast } from "sonner";
 
 export function ApiKeyModal() {
   const { showApiKeyModal, setGroqApiKey, setShowApiKeyModal } = useConfigStore();
@@ -19,9 +20,13 @@ export function ApiKeyModal() {
   async function handleSubmit() {
     if (!apiKey.trim()) return;
     setIsSubmitting(true);
-    await setGroqApiKey(apiKey.trim());
+    const ok = await setGroqApiKey(apiKey.trim());
     setIsSubmitting(false);
-    setApiKey("");
+    if (ok) {
+      setApiKey("");
+    } else {
+      toast.error("Failed to save API key");
+    }
   }
 
   return (

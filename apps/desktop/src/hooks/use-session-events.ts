@@ -30,6 +30,35 @@ export function useSessionEvents({ port, sessionId, spacePath }: UseSessionEvent
     (_, { next }: SWRSubscriptionOptions<SSEEvent, Error>) => {
       const url = `http://127.0.0.1:${port}/event?directory=${encodeURIComponent(spacePath)}`;
       const eventSource = new EventSource(url);
+      const fetchDelayMs = 150;
+      let fetchTimer: ReturnType<typeof setTimeout> | null = null;
+      let inFlight = false;
+      let pending = false;
+
+      const runFetch = () => {
+        if (inFlight) {
+          pending = true;
+          return;
+        }
+        inFlight = true;
+        fetchMessages(port, spacePath, sessionId)
+          .catch(() => undefined)
+          .finally(() => {
+            inFlight = false;
+            if (pending) {
+              pending = false;
+              scheduleFetch();
+            }
+          });
+      };
+
+      const scheduleFetch = () => {
+        if (fetchTimer) return;
+        fetchTimer = setTimeout(() => {
+          fetchTimer = null;
+          runFetch();
+        }, fetchDelayMs);
+      };
       
       // Check session status on connection to sync typing state
       fetch(`http://127.0.0.1:${port}/session/${sessionId}`)
@@ -58,12 +87,12 @@ export function useSessionEvents({ port, sessionId, spacePath }: UseSessionEvent
 
           if (eventType === "message.updated") {
             if (properties?.info?.sessionID === sessionId) {
-              fetchMessages(port, spacePath, sessionId);
+              scheduleFetch();
               next(null, data);
             }
           } else if (eventType === "message.part.updated") {
             if (properties?.part?.sessionID === sessionId) {
-              fetchMessages(port, spacePath, sessionId);
+              scheduleFetch();
               setIsAssistantTyping(spacePath, sessionId, true);
               next(null, data);
             }
@@ -90,11 +119,15 @@ export function useSessionEvents({ port, sessionId, spacePath }: UseSessionEvent
 
       eventSource.onerror = () => {
         console.error("SSE connection error");
+        setIsAssistantTyping(spacePath, sessionId, false);
         next(new Error("SSE connection error"));
       };
 
       // Cleanup function - called when key changes or component unmounts
       return () => {
+        if (fetchTimer) {
+          clearTimeout(fetchTimer);
+        }
         eventSource.close();
       };
     }

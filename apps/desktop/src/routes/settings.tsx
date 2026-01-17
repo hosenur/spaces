@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Tabs, TabList, Tab, TabPanel } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,18 +14,13 @@ import {
   ModalTitle,
 } from "@/components/ui/modal";
 import { toast } from "sonner";
+import { getAsanaAuth, setAsanaToken, disconnectAsana } from "@/lib/tauri";
+import { useConfigStore } from "@/stores";
+import type { AsanaAuth } from "@/types/config";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
-
-interface AsanaAuth {
-  access_token: string;
-}
-
-interface GroqAuth {
-  api_key: string;
-}
 
 function GroqIcon({ className }: { className?: string }) {
   return (
@@ -52,36 +46,26 @@ function AsanaIcon({ className }: { className?: string }) {
 }
 
 function SettingsPage() {
+  const { config, setGroqApiKey, clearGroqApiKey } = useConfigStore();
   const [asanaAuth, setAsanaAuth] = useState<AsanaAuth | null>(null);
   const [token, setToken] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isAsanaModalOpen, setIsAsanaModalOpen] = useState(false);
 
-  const [groqAuth, setGroqAuth] = useState<GroqAuth | null>(null);
   const [groqToken, setGroqToken] = useState("");
   const [isSavingGroq, setIsSavingGroq] = useState(false);
   const [isGroqModalOpen, setIsGroqModalOpen] = useState(false);
 
   useEffect(() => {
     loadAsanaAuth();
-    loadGroqAuth();
   }, []);
 
   async function loadAsanaAuth() {
     try {
-      const auth = await invoke<AsanaAuth | null>("get_asana_auth");
+      const auth = await getAsanaAuth();
       setAsanaAuth(auth);
     } catch (err) {
       console.error("Failed to load Asana auth:", err);
-    }
-  }
-
-  async function loadGroqAuth() {
-    try {
-      const auth = await invoke<GroqAuth | null>("get_groq_auth");
-      setGroqAuth(auth);
-    } catch (err) {
-      console.error("Failed to load Groq auth:", err);
     }
   }
 
@@ -89,7 +73,7 @@ function SettingsPage() {
     if (!token.trim()) return;
     setIsSaving(true);
     try {
-      await invoke("set_asana_token", { token: token.trim() });
+      await setAsanaToken(token.trim());
       setAsanaAuth({ access_token: token.trim() });
       setToken("");
       setIsAsanaModalOpen(false);
@@ -106,11 +90,14 @@ function SettingsPage() {
     if (!groqToken.trim()) return;
     setIsSavingGroq(true);
     try {
-      await invoke("set_groq_token", { token: groqToken.trim() });
-      setGroqAuth({ api_key: groqToken.trim() });
-      setGroqToken("");
-      setIsGroqModalOpen(false);
-      toast.success("Connected to Groq");
+      const ok = await setGroqApiKey(groqToken.trim());
+      if (ok) {
+        setGroqToken("");
+        setIsGroqModalOpen(false);
+        toast.success("Connected to Groq");
+      } else {
+        toast.error("Failed to connect to Groq");
+      }
     } catch (err) {
       console.error("Failed to save Groq token:", err);
       toast.error(err as string);
@@ -121,7 +108,7 @@ function SettingsPage() {
 
   async function handleDisconnectAsana() {
     try {
-      await invoke("disconnect_asana");
+      await disconnectAsana();
       setAsanaAuth(null);
       toast.success("Disconnected from Asana");
     } catch (err) {
@@ -132,9 +119,12 @@ function SettingsPage() {
 
   async function handleDisconnectGroq() {
     try {
-      await invoke("disconnect_groq");
-      setGroqAuth(null);
-      toast.success("Disconnected from Groq");
+      const ok = await clearGroqApiKey();
+      if (ok) {
+        toast.success("Disconnected from Groq");
+      } else {
+        toast.error("Failed to disconnect from Groq");
+      }
     } catch (err) {
       console.error("Failed to disconnect from Groq:", err);
       toast.error(err as string);
@@ -217,7 +207,7 @@ function SettingsPage() {
                 <GroqIcon className="size-6 shrink-0" />
                 <div>
                   <h3 className="font-medium">Groq</h3>
-                  {groqAuth ? (
+                  {config?.groq_api_key ? (
                     <p className="text-sm text-muted-fg">Connected</p>
                   ) : (
                     <p className="text-sm text-muted-fg">
@@ -227,7 +217,7 @@ function SettingsPage() {
                 </div>
               </div>
               <div className="shrink-0">
-                {groqAuth ? (
+                {config?.groq_api_key ? (
                   <Button intent="outline" onPress={handleDisconnectGroq}>
                     Disconnect
                   </Button>

@@ -1,15 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { PatchDiff } from "@pierre/diffs/react";
 import { useConnectionStore } from "@/stores";
-
-interface GitDiff {
-  file_path: string;
-  diff: string;
-  additions: number;
-  deletions: number;
-}
+import { getGitDiffs } from "@/lib/tauri";
+import type { GitDiff } from "@/types/tauri";
 
 type DiffsSearch = {
   folderPath?: string;
@@ -39,12 +33,13 @@ function DiffsComponent() {
     }
 
     setCurrentSpace(folderPath);
+    setLoading(true);
+    setError(null);
+    setDiffs([]);
 
     async function initFolder() {
       try {
-        const result = await invoke<GitDiff[]>("get_git_diffs", {
-          path: folderPath,
-        });
+        const result = await getGitDiffs(folderPath!);
         setDiffs(result);
       } catch (err) {
         setError(err as string);

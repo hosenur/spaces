@@ -5,7 +5,8 @@ import { Delete02Icon } from "@hugeicons/core-free-icons";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useConfigStore, type Task } from "@/stores/config-store";
+import { useConfigStore } from "@/stores/config-store";
+import type { Task } from "@/types/config";
 import { decodeSpacePath } from "@/lib/space-path";
 
 export const Route = createFileRoute("/space/$spacePath/tasks")({

@@ -2,6 +2,7 @@
 use tauri::Manager;
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -154,24 +155,45 @@ fn clone_repo_to_space(path: &str) -> Result<ClonedRepo, String> {
     }
     
     // Add original as a remote for fetching/diffing
-    Command::new("git")
+    let remote_output = Command::new("git")
         .args(["remote", "add", "original", path])
         .current_dir(&cloned_path)
         .output()
         .map_err(|e| format!("Failed to add remote: {}", e))?;
     
+    if !remote_output.status.success() {
+        return Err(format!(
+            "Failed to add remote: {}",
+            String::from_utf8_lossy(&remote_output.stderr)
+        ));
+    }
+    
     // Create initial commit with all files
-    Command::new("git")
+    let add_output = Command::new("git")
         .args(["add", "."])
         .current_dir(&cloned_path)
         .output()
         .map_err(|e| format!("Failed to git add: {}", e))?;
     
-    Command::new("git")
+    if !add_output.status.success() {
+        return Err(format!(
+            "Failed to git add: {}",
+            String::from_utf8_lossy(&add_output.stderr)
+        ));
+    }
+    
+    let commit_output = Command::new("git")
         .args(["commit", "-m", &format!("Initial space from {}", original_name)])
         .current_dir(&cloned_path)
         .output()
         .map_err(|e| format!("Failed to git commit: {}", e))?;
+    
+    if !commit_output.status.success() {
+        return Err(format!(
+            "Failed to git commit: {}",
+            String::from_utf8_lossy(&commit_output.stderr)
+        ));
+    }
     
     // Rename branch to match original
     if branch_name != "master" {
@@ -276,9 +298,60 @@ fn archive_space(path: String, state: tauri::State<'_, AppState>) -> Result<(), 
 }
 
 
+const MAX_UNTRACKED_BYTES: u64 = 256 * 1024;
+
+fn read_text_file_snippet(path: &Path, max_bytes: u64) -> (Option<String>, bool) {
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return (None, false),
+    };
+    let mut buf = Vec::new();
+    if file.take(max_bytes + 1).read_to_end(&mut buf).is_err() {
+        return (None, false);
+    }
+    let truncated = buf.len() as u64 > max_bytes;
+    if truncated {
+        buf.truncate(max_bytes as usize);
+    }
+    match String::from_utf8(buf) {
+        Ok(text) => (Some(text), truncated),
+        Err(_) => (None, truncated),
+    }
+}
+
+fn format_new_file_diff(file_path: &str, content: Option<&str>, truncated: bool) -> String {
+    let header = format!(
+        "diff --git a/{} b/{}\nnew file mode 100644\n--- /dev/null\n+++ b/{}\n",
+        file_path, file_path, file_path
+    );
+
+    match content {
+        Some(text) => {
+            let mut lines: Vec<String> = text.lines().map(|l| format!("+{}", l)).collect();
+            if lines.is_empty() {
+                lines.push("+<empty file>".to_string());
+            }
+            if truncated {
+                lines.push("+... (truncated)".to_string());
+            }
+            let line_count = lines.len();
+            format!(
+                "{}@@ -0,0 +1,{} @@\n{}",
+                header,
+                line_count,
+                lines.join("\n")
+            )
+        }
+        None => format!(
+            "{}@@ -0,0 +1,1 @@\n+Binary or unreadable file omitted",
+            header
+        ),
+    }
+}
+
 #[tauri::command]
 fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
-    let space_path = Path::new(path);
+    let space_path = validate_space_path(path)?;
     let git_original = space_path.join(".git-original");
     
     // Use .git-original if it exists (for spaces), otherwise use regular .git
@@ -298,7 +371,7 @@ fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
     
     let output = Command::new("git")
         .args(&args)
-        .current_dir(path)
+        .current_dir(&space_path)
         .output()
         .map_err(|e| format!("Failed to execute git: {}", e))?;
 
@@ -322,7 +395,7 @@ fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
             
             let diff_output = Command::new("git")
                 .args(&diff_args)
-                .current_dir(path)
+                .current_dir(&space_path)
                 .output();
 
             let diff = match diff_output {
@@ -349,7 +422,7 @@ fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
     
     let untracked_output = Command::new("git")
         .args(&untracked_args)
-        .current_dir(path)
+        .current_dir(&space_path)
         .output();
     
     if let Ok(output) = untracked_output {
@@ -362,18 +435,23 @@ fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
                 
                 // Read file content for untracked files
                 let full_path = space_path.join(file_path);
-                let content = fs::read_to_string(&full_path).unwrap_or_default();
-                let line_count = content.lines().count() as i32;
-                
-                // Create a diff-like output for new files
-                let diff = format!(
-                    "diff --git a/{} b/{}\nnew file mode 100644\n--- /dev/null\n+++ b/{}\n{}",
-                    file_path,
-                    file_path,
-                    file_path,
-                    content.lines().map(|l| format!("+{}", l)).collect::<Vec<_>>().join("\n")
-                );
-                
+                let (content, truncated) = read_text_file_snippet(&full_path, MAX_UNTRACKED_BYTES);
+                let line_count = content
+                    .as_deref()
+                    .map(|text| {
+                        let mut count = text.lines().count() as i32;
+                        if count == 0 {
+                            count = 1;
+                        }
+                        if truncated {
+                            count += 1;
+                        }
+                        count
+                    })
+                    .unwrap_or(1);
+
+                let diff = format_new_file_diff(file_path, content.as_deref(), truncated);
+
                 diffs.push(GitDiff {
                     file_path: file_path.to_string(),
                     diff,
@@ -586,6 +664,13 @@ fn set_groq_api_key(api_key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn clear_groq_api_key() -> Result<(), String> {
+    let mut config = get_config()?;
+    config.groq_api_key = None;
+    save_config(config)
+}
+
+#[tauri::command]
 fn add_space_to_config(cloned_path: String, random_name: String) -> Result<(), String> {
     let mut config = get_config()?;
     // Check if space already exists
@@ -739,7 +824,7 @@ pub fn run() {
         .manage(AppState {
             opencode_processes: Mutex::new(HashMap::new()),
         })
-        .invoke_handler(tauri::generate_handler![greet, validate_git_folder, get_git_diffs, clone_repo_to_space, start_opencode_server, get_opencode_port, list_cloned_repos, get_all_opencode_servers, start_all_opencode_servers, archive_space, check_uncommitted_changes, get_config, save_config, set_groq_api_key, add_space_to_config, set_space_branch_name, get_space_config, add_task, remove_task, toggle_task, set_asana_token, get_asana_auth, disconnect_asana, fetch_asana_tasks])
+        .invoke_handler(tauri::generate_handler![greet, validate_git_folder, get_git_diffs, clone_repo_to_space, start_opencode_server, get_opencode_port, list_cloned_repos, get_all_opencode_servers, start_all_opencode_servers, archive_space, check_uncommitted_changes, get_config, save_config, set_groq_api_key, clear_groq_api_key, add_space_to_config, set_space_branch_name, get_space_config, add_task, remove_task, toggle_task, set_asana_token, get_asana_auth, disconnect_asana, fetch_asana_tasks])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.maximize();

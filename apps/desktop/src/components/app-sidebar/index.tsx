@@ -3,7 +3,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { PackageIcon, GitMergeIcon, Add01Icon, PlugSocketIcon, Archive04Icon, GitForkIcon, CheckListIcon, Settings02Icon } from "@hugeicons/core-free-icons";
 import { EllipsisHorizontalIcon } from "@heroicons/react/16/solid";
 import { open } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { Hatch } from "ldrs/react";
@@ -34,14 +33,9 @@ import {
 } from "@/components/ui/sidebar";
 import { encodeSpacePath } from "@/lib/space-path";
 import { formatTimeAgo } from "@/lib/time";
+import { archiveSpace, checkUncommittedChanges, cloneRepoToSpace, listClonedRepos, validateGitFolder } from "@/lib/tauri";
 import { useChatStore, useConfigStore, useConnectionStore } from "@/stores";
-
-interface ClonedRepo {
-  original_path: string;
-  original_name: string;
-  cloned_path: string;
-  cloned_name: string;
-}
+import type { ClonedRepo } from "@/types/tauri";
 
 interface RepoGroup {
   original_path: string;
@@ -89,7 +83,7 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
   useEffect(() => {
     async function loadExistingRepos() {
       try {
-        const repos = await invoke<ClonedRepo[]>("list_cloned_repos");
+        const repos = await listClonedRepos();
         const groups = repos.reduce((acc, repo) => {
           const existing = acc.find((g) => g.original_path === repo.original_path);
           if (existing) {
@@ -124,10 +118,8 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
       }
       
       try {
-        await invoke("validate_git_folder", { path: selected });
-        const clonedRepo = await invoke<ClonedRepo>("clone_repo_to_space", {
-          path: selected,
-        });
+        await validateGitFolder(selected);
+        const clonedRepo = await cloneRepoToSpace(selected);
         setRepoGroups((prev) => [
           ...prev,
           {
@@ -136,6 +128,7 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
             clones: [clonedRepo],
           },
         ]);
+        await addSpaceToConfig(clonedRepo.cloned_path, clonedRepo.cloned_name);
         navigate({ to: "/diffs", search: { folderPath: clonedRepo.cloned_path } });
       } catch (error) {
         toast.error(error as string);
@@ -145,9 +138,7 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
 
   async function handleNewSpace(originalPath: string) {
     try {
-      const clonedRepo = await invoke<ClonedRepo>("clone_repo_to_space", {
-        path: originalPath,
-      });
+      const clonedRepo = await cloneRepoToSpace(originalPath);
       setRepoGroups((prev) =>
         prev.map((group) =>
           group.original_path === originalPath
@@ -173,7 +164,7 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
 
   async function handleArchive(clonedPath: string) {
     try {
-      const hasChanges = await invoke<boolean>("check_uncommitted_changes", { path: clonedPath });
+      const hasChanges = await checkUncommittedChanges(clonedPath);
       if (hasChanges) {
         setPendingArchivePath(clonedPath);
         setArchiveModalOpen(true);
@@ -187,7 +178,7 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
 
   async function doArchive(clonedPath: string) {
     try {
-      await invoke("archive_space", { path: clonedPath });
+      await archiveSpace(clonedPath);
       // Remove the server from connection store (Rust already kills the process)
       removeServer(clonedPath);
       setRepoGroups((prev) =>

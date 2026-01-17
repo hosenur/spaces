@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as DiffsRouteImport } from './routes/diffs'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SpaceSpacePathRouteRouteImport } from './routes/space/$spacePath/route'
@@ -20,6 +21,11 @@ import { Route as SpaceSpacePathSessionSessionIdRouteImport } from './routes/spa
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DiffsRoute = DiffsRouteImport.update({
@@ -57,6 +63,7 @@ const SpaceSpacePathSessionSessionIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/diffs': typeof DiffsRoute
+  '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
   '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/diffs': typeof DiffsRoute
+  '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath': typeof SpaceSpacePathIndexRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/diffs': typeof DiffsRoute
+  '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
   '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
@@ -86,6 +95,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/diffs'
+    | '/login'
     | '/settings'
     | '/space/$spacePath'
     | '/space/$spacePath/tasks'
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/diffs'
+    | '/login'
     | '/settings'
     | '/space/$spacePath/tasks'
     | '/space/$spacePath'
@@ -103,6 +114,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/diffs'
+    | '/login'
     | '/settings'
     | '/space/$spacePath'
     | '/space/$spacePath/tasks'
@@ -113,6 +125,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DiffsRoute: typeof DiffsRoute
+  LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
   SpaceSpacePathRouteRoute: typeof SpaceSpacePathRouteRouteWithChildren
 }
@@ -124,6 +137,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/diffs': {
@@ -189,6 +209,7 @@ const SpaceSpacePathRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DiffsRoute: DiffsRoute,
+  LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
   SpaceSpacePathRouteRoute: SpaceSpacePathRouteRouteWithChildren,
 }

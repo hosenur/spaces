@@ -1,36 +1,14 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
-
-export interface Task {
-  id: string;
-  text: string;
-  completed: boolean;
-}
-
-export interface SpaceConfig {
-  cloned_path: string;
-  random_name: string;
-  branch_name?: string;
-  created_at?: number;
-  tasks: Task[];
-}
-
-export interface AsanaAuth {
-  access_token: string;
-}
-
-export interface AppConfig {
-  groq_api_key?: string;
-  spaces: SpaceConfig[];
-  asana_auth?: AsanaAuth;
-}
+import * as tauri from "@/lib/tauri";
+import type { AppConfig, Task, SpaceConfig } from "@/types/config";
 
 interface ConfigState {
   config: AppConfig | null;
   isLoading: boolean;
   showApiKeyModal: boolean;
   fetchConfig: () => Promise<void>;
-  setGroqApiKey: (apiKey: string) => Promise<void>;
+  setGroqApiKey: (apiKey: string) => Promise<boolean>;
+  clearGroqApiKey: () => Promise<boolean>;
   addSpaceToConfig: (clonedPath: string, randomName: string) => Promise<void>;
   setSpaceBranchName: (clonedPath: string, branchName: string) => Promise<void>;
   getSpaceConfig: (clonedPath: string) => SpaceConfig | undefined;
@@ -48,7 +26,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   fetchConfig: async () => {
     set({ isLoading: true });
     try {
-      const config = await invoke<AppConfig>("get_config");
+      const config = await tauri.getConfig();
       set({ 
         config, 
         isLoading: false,
@@ -62,22 +40,52 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   setGroqApiKey: async (apiKey: string) => {
     try {
-      await invoke("set_groq_api_key", { apiKey });
+      await tauri.setGroqApiKey(apiKey);
       set((state) => ({
         config: state.config ? { ...state.config, groq_api_key: apiKey } : { groq_api_key: apiKey, spaces: [] },
         showApiKeyModal: false,
       }));
+      return true;
     } catch (err) {
       console.error("Failed to set API key:", err);
+      return false;
+    }
+  },
+
+  clearGroqApiKey: async () => {
+    try {
+      await tauri.clearGroqApiKey();
+      set((state) => ({
+        config: state.config ? { ...state.config, groq_api_key: undefined } : { groq_api_key: undefined, spaces: [] },
+        showApiKeyModal: true,
+      }));
+      return true;
+    } catch (err) {
+      console.error("Failed to clear API key:", err);
+      return false;
     }
   },
 
   addSpaceToConfig: async (clonedPath: string, randomName: string) => {
     try {
-      await invoke("add_space_to_config", { clonedPath, randomName });
+      await tauri.addSpaceToConfig(clonedPath, randomName);
       const now = Date.now();
       set((state) => {
-        if (!state.config) return state;
+        if (!state.config) {
+          return {
+            config: {
+              groq_api_key: undefined,
+              spaces: [
+                {
+                  cloned_path: clonedPath,
+                  random_name: randomName,
+                  created_at: now,
+                  tasks: [],
+                },
+              ],
+            },
+          };
+        }
         const exists = state.config.spaces.some((s) => s.cloned_path === clonedPath);
         if (exists) return state;
         return {
@@ -94,7 +102,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   setSpaceBranchName: async (clonedPath: string, branchName: string) => {
     try {
-      await invoke("set_space_branch_name", { clonedPath, branchName });
+      await tauri.setSpaceBranchName(clonedPath, branchName);
       set((state) => {
         if (!state.config) return state;
         return {
@@ -121,7 +129,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   addTask: async (clonedPath: string, text: string) => {
     try {
-      const task = await invoke<Task>("add_task", { clonedPath, text });
+      const task = await tauri.addTask(clonedPath, text);
       set((state) => {
         if (!state.config) return state;
         return {
@@ -142,7 +150,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   removeTask: async (clonedPath: string, taskId: string) => {
     try {
-      await invoke("remove_task", { clonedPath, taskId });
+      await tauri.removeTask(clonedPath, taskId);
       set((state) => {
         if (!state.config) return state;
         return {
@@ -161,7 +169,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   toggleTask: async (clonedPath: string, taskId: string) => {
     try {
-      await invoke("toggle_task", { clonedPath, taskId });
+      await tauri.toggleTask(clonedPath, taskId);
       set((state) => {
         if (!state.config) return state;
         return {

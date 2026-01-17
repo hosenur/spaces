@@ -95,7 +95,10 @@ export function ChatWindow({ port, sessionId, spacePath }: ChatWindowProps) {
     const spaceConfig = getSpaceConfig(spacePath);
     const shouldGenerateBranchName = isFirstMessage && config?.groq_api_key && !spaceConfig?.branch_name;
 
-    await sendMessage(port, spacePath, sessionId, messageText, selectedAgent, model);
+    const ok = await sendMessage(port, spacePath, sessionId, messageText, selectedAgent, model);
+    if (ok) {
+      fetchMessages(port, spacePath, sessionId);
+    }
 
     // Generate branch name in background after sending the message
     if (shouldGenerateBranchName && config?.groq_api_key) {

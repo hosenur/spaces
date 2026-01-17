@@ -816,6 +816,16 @@ async fn fetch_asana_tasks() -> Result<Vec<AsanaTask>, String> {
     Ok(tasks_resp.data)
 }
 
+fn kill_all_opencode_processes(state: &AppState) {
+    if let Ok(mut processes) = state.opencode_processes.lock() {
+        for (path, (mut child, _port)) in processes.drain() {
+            let _ = child.kill();
+            let _ = child.wait();
+            println!("Killed opencode process for {}", path);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -835,6 +845,15 @@ pub fn run() {
                 }
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                if window.label() == "main" {
+                    if let Some(state) = window.try_state::<AppState>() {
+                        kill_all_opencode_processes(&state);
+                    }
+                }
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

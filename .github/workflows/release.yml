@@ -83,22 +83,24 @@ jobs:
       - name: Update version in package.json
         run: |
           jq '.version = "${{ needs.bump-version.outputs.new_version }}"' package.json > tmp.json && mv tmp.json package.json
+          jq '.version = "${{ needs.bump-version.outputs.new_version }}"' apps/desktop/package.json > tmp.json && mv tmp.json apps/desktop/package.json
 
       - name: Update version in tauri.conf.json
         run: |
-          jq '.version = "${{ needs.bump-version.outputs.new_version }}"' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          jq '.version = "${{ needs.bump-version.outputs.new_version }}"' apps/desktop/src-tauri/tauri.conf.json > tmp.json && mv tmp.json apps/desktop/src-tauri/tauri.conf.json
 
       - name: Update version in Cargo.toml
         shell: bash
         run: |
-          sed -i.bak 's/^version = ".*"/version = "${{ needs.bump-version.outputs.new_version }}"/' src-tauri/Cargo.toml
-          rm -f src-tauri/Cargo.toml.bak
+          sed -i.bak 's/^version = ".*"/version = "${{ needs.bump-version.outputs.new_version }}"/' apps/desktop/src-tauri/Cargo.toml
+          rm -f apps/desktop/src-tauri/Cargo.toml.bak
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          projectPath: apps/desktop
           args: ${{ matrix.args }}
 
       - name: Upload artifacts
@@ -106,8 +108,8 @@ jobs:
         with:
           name: bundles-${{ matrix.platform }}-${{ matrix.target || 'default' }}
           path: |
-            src-tauri/target/release/bundle/
-            src-tauri/target/${{ matrix.target }}/release/bundle/
+            apps/desktop/src-tauri/target/release/bundle/
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/
 
   release:
     needs: [bump-version, build]
@@ -154,13 +156,14 @@ jobs:
           
           # Update package.json
           jq '.version = "${{ needs.bump-version.outputs.new_version }}"' package.json > tmp.json && mv tmp.json package.json
+          jq '.version = "${{ needs.bump-version.outputs.new_version }}"' apps/desktop/package.json > tmp.json && mv tmp.json apps/desktop/package.json
           
           # Update tauri.conf.json
-          jq '.version = "${{ needs.bump-version.outputs.new_version }}"' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          jq '.version = "${{ needs.bump-version.outputs.new_version }}"' apps/desktop/src-tauri/tauri.conf.json > tmp.json && mv tmp.json apps/desktop/src-tauri/tauri.conf.json
           
           # Update Cargo.toml
-          sed -i 's/^version = ".*"/version = "${{ needs.bump-version.outputs.new_version }}"/' src-tauri/Cargo.toml
+          sed -i 's/^version = ".*"/version = "${{ needs.bump-version.outputs.new_version }}"/' apps/desktop/src-tauri/Cargo.toml
           
-          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          git add package.json apps/desktop/package.json apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml
           git commit -m "chore: bump version to ${{ needs.bump-version.outputs.new_version }}" || echo "No changes to commit"
           git push

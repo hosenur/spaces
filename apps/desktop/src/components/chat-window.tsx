@@ -91,9 +91,9 @@ export function ChatWindow({ port, sessionId, spacePath }: ChatWindowProps) {
 
     // Check if this is the first message (no messages yet) and we have an API key
     // spacePath is already the decoded path (e.g., /Users/...)
-    const isFirstMessage = messages.length === 0;
+    const hasUserMessage = messages.some((msg) => msg.info.role === "user");
     const spaceConfig = getSpaceConfig(spacePath);
-    const shouldGenerateBranchName = isFirstMessage && config?.groq_api_key && !spaceConfig?.branch_name;
+    const shouldGenerateBranchName = !hasUserMessage && config?.groq_api_key && !spaceConfig?.branch_name;
 
     const ok = await sendMessage(port, spacePath, sessionId, messageText, selectedAgent, model);
     if (ok) {

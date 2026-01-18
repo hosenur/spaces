@@ -8,6 +8,8 @@ const DEFAULT_SPACE_SESSION_STATE: SpaceSessionState = {
   error: null,
 };
 
+const creatingSessions = new Map<string, Promise<Session | null>>();
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   spaces: {},
 
@@ -70,32 +72,42 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   createSession: async (port: number, spacePath: string) => {
     if (!port) return null;
 
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
+    const existing = creatingSessions.get(spacePath);
+    if (existing) return existing;
 
-      if (!response.ok) {
-        throw new Error("Failed to create session");
-      }
+    const createPromise = (async () => {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
 
-      const session: Session = await response.json();
-      set((state) => ({
-        spaces: {
-          ...state.spaces,
-          [spacePath]: {
-            ...(state.spaces[spacePath] ?? DEFAULT_SPACE_SESSION_STATE),
-            sessions: [session, ...(state.spaces[spacePath]?.sessions ?? [])],
+        if (!response.ok) {
+          throw new Error("Failed to create session");
+        }
+
+        const session: Session = await response.json();
+        set((state) => ({
+          spaces: {
+            ...state.spaces,
+            [spacePath]: {
+              ...(state.spaces[spacePath] ?? DEFAULT_SPACE_SESSION_STATE),
+              sessions: [session, ...(state.spaces[spacePath]?.sessions ?? [])],
+            },
           },
-        },
-      }));
-      return session;
-    } catch (err) {
-      console.error("Failed to create session:", err);
-      return null;
-    }
+        }));
+        return session;
+      } catch (err) {
+        console.error("Failed to create session:", err);
+        return null;
+      }
+    })();
+
+    creatingSessions.set(spacePath, createPromise);
+    const session = await createPromise;
+    creatingSessions.delete(spacePath);
+    return session;
   },
 
   clearSessions: (spacePath: string) => {

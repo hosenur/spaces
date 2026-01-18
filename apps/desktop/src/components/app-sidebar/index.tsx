@@ -129,7 +129,8 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
           },
         ]);
         await addSpaceToConfig(clonedRepo.cloned_path, clonedRepo.cloned_name);
-        navigate({ to: "/diffs", search: { folderPath: clonedRepo.cloned_path } });
+        const encodedPath = encodeSpacePath(clonedRepo.cloned_path);
+        navigate({ to: "/space/$spacePath/tasks", params: { spacePath: encodedPath } });
       } catch (error) {
         toast.error(error as string);
       }

@@ -69,32 +69,41 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   addSpaceToConfig: async (clonedPath: string, randomName: string) => {
     try {
       await tauri.addSpaceToConfig(clonedPath, randomName);
-      const now = Date.now();
-      set((state) => {
-        if (!state.config) {
+      try {
+        const config = await tauri.getConfig();
+        set({
+          config,
+          showApiKeyModal: !config.groq_api_key,
+        });
+      } catch (err) {
+        console.error("Failed to refresh config after adding space:", err);
+        const now = Date.now();
+        set((state) => {
+          if (!state.config) {
+            return {
+              config: {
+                groq_api_key: undefined,
+                spaces: [
+                  {
+                    cloned_path: clonedPath,
+                    random_name: randomName,
+                    created_at: now,
+                    tasks: [],
+                  },
+                ],
+              },
+            };
+          }
+          const exists = state.config.spaces.some((s) => s.cloned_path === clonedPath);
+          if (exists) return state;
           return {
             config: {
-              groq_api_key: undefined,
-              spaces: [
-                {
-                  cloned_path: clonedPath,
-                  random_name: randomName,
-                  created_at: now,
-                  tasks: [],
-                },
-              ],
+              ...state.config,
+              spaces: [...state.config.spaces, { cloned_path: clonedPath, random_name: randomName, created_at: now, tasks: [] }],
             },
           };
-        }
-        const exists = state.config.spaces.some((s) => s.cloned_path === clonedPath);
-        if (exists) return state;
-        return {
-          config: {
-            ...state.config,
-            spaces: [...state.config.spaces, { cloned_path: clonedPath, random_name: randomName, created_at: now, tasks: [] }],
-          },
-        };
-      });
+        });
+      }
     } catch (err) {
       console.error("Failed to add space to config:", err);
     }
@@ -103,16 +112,23 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   setSpaceBranchName: async (clonedPath: string, branchName: string) => {
     try {
       await tauri.setSpaceBranchName(clonedPath, branchName);
-      set((state) => {
-        if (!state.config) return state;
-        return {
-          config: {
-            ...state.config,
-            spaces: state.config.spaces.map((s) =>
-              s.cloned_path === clonedPath ? { ...s, branch_name: branchName } : s
-            ),
-          },
-        };
+      const state = get();
+      const hasSpace = state.config?.spaces.some((s) => s.cloned_path === clonedPath);
+      if (!state.config || !hasSpace) {
+        const config = await tauri.getConfig();
+        set({
+          config,
+          showApiKeyModal: !config.groq_api_key,
+        });
+        return;
+      }
+      set({
+        config: {
+          ...state.config,
+          spaces: state.config.spaces.map((s) =>
+            s.cloned_path === clonedPath ? { ...s, branch_name: branchName } : s
+          ),
+        },
       });
     } catch (err) {
       console.error("Failed to set branch name:", err);

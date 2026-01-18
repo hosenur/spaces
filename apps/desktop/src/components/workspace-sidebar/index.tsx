@@ -2,8 +2,11 @@ import { type ComponentProps } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Message01Icon, RefreshIcon, Add01Icon } from "@hugeicons/core-free-icons";
 import { useNavigate } from "@tanstack/react-router";
+import { AnimatePresence, motion } from "motion/react";
+import { LineSpinner } from "ldrs/react";
+import "ldrs/react/LineSpinner.css";
 import { Button } from "@/components/ui/button";
-import { useConnectionStore, useSessionStore } from "@/stores";
+import { useChatStore, useConnectionStore, useSessionStore } from "@/stores";
 import { encodeSpacePath } from "@/lib/space-path";
 import {
   Sidebar,
@@ -14,11 +17,17 @@ import {
   SidebarSectionGroup,
   SidebarItem,
 } from "@/components/ui/sidebar";
+import type { SessionChatState } from "@/stores/types";
+
+const EMPTY_SESSION_STATES: Record<string, SessionChatState> = {};
 
 export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) {
   const { currentSpacePath, getPort } = useConnectionStore();
   const { getSpaceSessions, fetchSessions, createSession } = useSessionStore();
   const navigate = useNavigate();
+  const sessionStates = useChatStore((state) =>
+    currentSpacePath ? state.spaces[currentSpacePath]?.sessions ?? EMPTY_SESSION_STATES : EMPTY_SESSION_STATES
+  );
 
   const port = currentSpacePath ? getPort(currentSpacePath) : undefined;
 
@@ -51,6 +60,12 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
       to: "/space/$spacePath/session/$sessionId",
       params: { spacePath, sessionId },
     });
+  }
+
+  function isSessionLoading(sessionId: string): boolean {
+    const sessionState = sessionStates[sessionId];
+    if (!sessionState) return false;
+    return sessionState.isSending || sessionState.isAssistantTyping;
   }
 
   return (
@@ -112,7 +127,33 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
                 <SidebarSection label="Active Sessions">
                   {sessions.map((session) => (
                     <SidebarItem key={session.id} onPress={() => handleSessionClick(session.id)}>
-                      <HugeiconsIcon icon={Message01Icon} data-slot="icon" className="size-4" />
+                      <div data-slot="icon" className="flex size-4 items-center justify-center">
+                        <AnimatePresence mode="wait">
+                          {isSessionLoading(session.id) ? (
+                            <motion.span
+                              key="loading"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="flex"
+                            >
+                              <LineSpinner size="16" stroke="2" speed="1" color="currentColor" />
+                            </motion.span>
+                          ) : (
+                            <motion.span
+                              key="icon"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="flex"
+                            >
+                              <HugeiconsIcon icon={Message01Icon} data-slot="icon" className="size-4" />
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </div>
                       <SidebarLabel>{session.title || `Session ${session.id.slice(0, 8)}`}</SidebarLabel>
                     </SidebarItem>
                   ))}

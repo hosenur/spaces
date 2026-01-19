@@ -120,6 +120,57 @@ fn format_new_file_diff(file_path: &str, content: Option<&str>, truncated: bool)
     }
 }
 
+/// Parse a combined git diff output into individual file diffs.
+/// Each diff starts with "diff --git a/... b/..." header.
+fn parse_combined_diff(diff_output: &str) -> Vec<(String, String)> {
+    let mut results = Vec::new();
+    let mut current_file: Option<String> = None;
+    let mut current_diff = String::new();
+
+    for line in diff_output.lines() {
+        if line.starts_with("diff --git ") {
+            // Save the previous diff if any
+            if let Some(file) = current_file.take() {
+                results.push((file, current_diff.clone()));
+            }
+            current_diff.clear();
+
+            // Extract file path from "diff --git a/path b/path"
+            // Handle both normal paths and paths with spaces/special chars
+            if let Some(b_part) = line.split(" b/").last() {
+                current_file = Some(b_part.to_string());
+            }
+            current_diff.push_str(line);
+            current_diff.push('\n');
+        } else if current_file.is_some() {
+            current_diff.push_str(line);
+            current_diff.push('\n');
+        }
+    }
+
+    // Don't forget the last file
+    if let Some(file) = current_file {
+        results.push((file, current_diff));
+    }
+
+    results
+}
+
+/// Parse git diff --numstat output into a map of file path -> (additions, deletions)
+fn parse_numstat(numstat_output: &str) -> std::collections::HashMap<String, (i32, i32)> {
+    let mut stats = std::collections::HashMap::new();
+    for line in numstat_output.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 3 {
+            let additions = parts[0].parse::<i32>().unwrap_or(0);
+            let deletions = parts[1].parse::<i32>().unwrap_or(0);
+            let file_path = parts[2].to_string();
+            stats.insert(file_path, (additions, deletions));
+        }
+    }
+    stats
+}
+
 #[tauri::command]
 pub fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
     let space_path = validate_space_path(path)?;
@@ -133,40 +184,33 @@ pub fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
 
     let mut diffs: Vec<GitDiff> = Vec::new();
 
-    let mut args = vec!["diff", "--numstat"];
+    // Get numstat for additions/deletions counts
+    let mut numstat_args = vec!["diff", "--numstat"];
     if !git_dir_arg.is_empty() {
-        args.insert(0, &git_dir_arg);
+        numstat_args.insert(0, &git_dir_arg);
     }
 
-    let output = run_command("git", &args, Some(&space_path))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    let numstat_output = run_command("git", &numstat_args, Some(&space_path))?;
+    if !numstat_output.status.success() {
+        return Err(String::from_utf8_lossy(&numstat_output.stderr).to_string());
     }
 
-    let numstat = String::from_utf8_lossy(&output.stdout);
+    let numstat_str = String::from_utf8_lossy(&numstat_output.stdout);
+    let file_stats = parse_numstat(&numstat_str);
 
-    for line in numstat.lines() {
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() >= 3 {
-            let additions = parts[0].parse::<i32>().unwrap_or(0);
-            let deletions = parts[1].parse::<i32>().unwrap_or(0);
-            let file_path = parts[2].to_string();
+    // Get all diffs in a single command
+    let mut diff_args = vec!["diff"];
+    if !git_dir_arg.is_empty() {
+        diff_args.insert(0, &git_dir_arg);
+    }
 
-            let mut diff_args = vec!["diff", "--", &file_path];
-            if !git_dir_arg.is_empty() {
-                diff_args.insert(0, &git_dir_arg);
-            }
+    let diff_output = run_command("git", &diff_args, Some(&space_path))?;
+    if diff_output.status.success() {
+        let combined_diff = String::from_utf8_lossy(&diff_output.stdout);
+        let parsed_diffs = parse_combined_diff(&combined_diff);
 
-            let diff_output = run_command("git", &diff_args, Some(&space_path));
-
-            let diff = match diff_output {
-                Ok(output) if output.status.success() => {
-                    String::from_utf8_lossy(&output.stdout).to_string()
-                }
-                _ => String::new(),
-            };
-
+        for (file_path, diff) in parsed_diffs {
+            let (additions, deletions) = file_stats.get(&file_path).copied().unwrap_or((0, 0));
             diffs.push(GitDiff {
                 file_path,
                 diff,
@@ -176,6 +220,7 @@ pub fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
         }
     }
 
+    // Handle untracked files
     let mut untracked_args = vec!["ls-files", "--others", "--exclude-standard"];
     if !git_dir_arg.is_empty() {
         untracked_args.insert(0, &git_dir_arg);

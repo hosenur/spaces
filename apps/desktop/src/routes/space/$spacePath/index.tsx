@@ -1,31 +1,29 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import { useConnectionStore, useSessionStore } from "@/stores";
+import { useSessionStore } from "@/stores";
 import { Loader } from "@/components/ui/loader";
-import { decodeSpacePath } from "@/lib/space-path";
+import type { SpaceRouteContext } from "./route";
 
 export const Route = createFileRoute("/space/$spacePath/")({
   component: SpaceIndex,
 });
 
 function SpaceIndex() {
-  const { spacePath } = Route.useParams();
+  const { spacePath: encodedPath } = Route.useParams();
   const navigate = useNavigate();
-  const decodedPath = decodeSpacePath(spacePath);
-  const { currentSpacePath, isServerBooting, getPort } = useConnectionStore();
+  const { spacePath, port } = Route.useRouteContext() as SpaceRouteContext;
   const { getSpaceSessions, createSession } = useSessionStore();
-  const { sessions, isLoading: isLoadingSessions, hasFetched, error } = getSpaceSessions(decodedPath);
+  const { sessions, isLoading: isLoadingSessions, hasFetched, error } = getSpaceSessions(spacePath);
   const isCreatingSession = useRef(false);
-  const port = getPort(decodedPath);
 
   // Reset the ref when space changes
   useEffect(() => {
     isCreatingSession.current = false;
-  }, [decodedPath]);
+  }, [spacePath]);
 
-  // When server is ready and sessions are loaded, either navigate to latest or create new
+  // When sessions are loaded, either navigate to latest or create new
   useEffect(() => {
-    if (!port || isServerBooting || isLoadingSessions || !hasFetched || error) return;
+    if (isLoadingSessions || !hasFetched || error) return;
 
     if (sessions.length > 0) {
       // Sort by created time (descending) and get the latest
@@ -38,7 +36,7 @@ function SpaceIndex() {
       if (latestSession) {
         navigate({
           to: "/space/$spacePath/session/$sessionId",
-          params: { spacePath, sessionId: latestSession.id },
+          params: { spacePath: encodedPath, sessionId: latestSession.id },
           replace: true,
         });
       }
@@ -47,12 +45,12 @@ function SpaceIndex() {
 
     if (isCreatingSession.current) return;
     isCreatingSession.current = true;
-    createSession(port, decodedPath)
+    createSession(port, spacePath)
       .then((session) => {
         if (session) {
           navigate({
             to: "/space/$spacePath/session/$sessionId",
-            params: { spacePath, sessionId: session.id },
+            params: { spacePath: encodedPath, sessionId: session.id },
             replace: true,
           });
         }
@@ -61,28 +59,20 @@ function SpaceIndex() {
         isCreatingSession.current = false;
       });
   }, [
-    port,
-    isServerBooting,
     isLoadingSessions,
     hasFetched,
     error,
     sessions,
+    encodedPath,
     spacePath,
-    decodedPath,
+    port,
     navigate,
     createSession,
   ]);
 
-  if (!currentSpacePath || isServerBooting) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-        <Loader className="size-6" />
-      </div>
-    );
-  }
-
   return (
     <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+      <Loader className="size-6" />
     </div>
   );
 }

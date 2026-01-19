@@ -5,28 +5,27 @@ import { Alert02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/ui/loader";
-import { decodeSpacePath } from "@/lib/space-path";
 import { formatTimeAgo } from "@/lib/time";
 import { getGithubIssues } from "@/lib/tauri";
 import type { GithubIssue } from "@/types/tauri";
+import type { SpaceRouteContext } from "./route";
 
 export const Route = createFileRoute("/space/$spacePath/issues")({
   component: IssuesPage,
 });
 
 function IssuesPage() {
-  const { spacePath } = Route.useParams();
-  const decodedPath = decodeSpacePath(spacePath);
+  const { spacePath } = Route.useRouteContext() as SpaceRouteContext;
   const [issues, setIssues] = useState<GithubIssue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadIssues = useCallback(async () => {
-    if (!decodedPath) return;
+    if (!spacePath) return;
     setIsLoading(true);
     setError(null);
     try {
-      const data = await getGithubIssues(decodedPath);
+      const data = await getGithubIssues(spacePath);
       const sorted = [...data].sort((a, b) => {
         const timeA = new Date(a.updatedAt).getTime();
         const timeB = new Date(b.updatedAt).getTime();
@@ -38,7 +37,7 @@ function IssuesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [decodedPath]);
+  }, [spacePath]);
 
   useEffect(() => {
     loadIssues();

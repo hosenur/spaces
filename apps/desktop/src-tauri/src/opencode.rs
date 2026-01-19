@@ -254,6 +254,64 @@ pub fn get_all_opencode_servers(state: tauri::State<'_, AppState>) -> Vec<OpenCo
     }
 }
 
+/// Internal helper to start a server for a single space path.
+/// Returns the server info or None on failure.
+fn start_server_for_path(
+    canonical_path: String,
+    processes: &Mutex<HashMap<String, (Child, u16)>>,
+) -> Option<OpenCodeServer> {
+    loop {
+        let mut procs = processes.lock().ok()?;
+
+        if let Some((_, port)) = procs.get_mut(&canonical_path) {
+            let port_value = *port;
+            drop(procs);
+            
+            let mut procs = processes.lock().ok()?;
+            if let Some((child, _)) = procs.get_mut(&canonical_path) {
+                if wait_for_server(child, port_value) {
+                    return Some(OpenCodeServer {
+                        path: canonical_path,
+                        port: port_value,
+                    });
+                }
+            }
+
+            if let Some((child, _)) = procs.remove(&canonical_path) {
+                drop(procs);
+                shutdown_child_process(&canonical_path, child);
+            }
+            continue;
+        }
+
+        let port: u16 = rand::rng().random_range(10000..60000);
+
+        let mut child = Command::new(get_opencode_binary())
+            .args(["serve", "--port", &port.to_string()])
+            .current_dir(&canonical_path)
+            .env("PATH", get_extended_path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+
+        drop(procs);
+
+        let mut procs = processes.lock().ok()?;
+        if !wait_for_server(&mut child, port) {
+            drop(procs);
+            shutdown_child_process(&canonical_path, child);
+            return None;
+        }
+
+        procs.insert(canonical_path.clone(), (child, port));
+        return Some(OpenCodeServer {
+            path: canonical_path,
+            port,
+        });
+    }
+}
+
 #[tauri::command]
 pub fn start_all_opencode_servers(
     state: tauri::State<'_, AppState>,
@@ -264,28 +322,39 @@ pub fn start_all_opencode_servers(
         return Ok(Vec::new());
     }
 
-    let mut servers = Vec::new();
-
     let entries = fs::read_dir(&space_dir)
         .map_err(|e| format!("Failed to read ~/.space directory: {}", e))?;
 
-    for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let path = entry.path();
-
-        if path.is_dir() {
-            let metadata_path = path.join(SPACE_METADATA_FILE);
-            if metadata_path.exists() {
-                let path_str = path.to_string_lossy().to_string();
-                if let Ok(server) = start_opencode_server(path_str, state.clone()) {
-                    servers.push(server);
-                }
+    // Collect all valid space paths first
+    let space_paths: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.is_dir() && path.join(SPACE_METADATA_FILE).exists() {
+                normalize_space_path(&path.to_string_lossy()).ok()
+            } else {
+                None
             }
-        }
+        })
+        .collect();
+
+    if space_paths.is_empty() {
+        return Ok(Vec::new());
     }
+
+    // Start all servers in parallel using scoped threads
+    let processes = &state.opencode_processes;
+    let servers = thread::scope(|scope| {
+        let handles: Vec<_> = space_paths
+            .into_iter()
+            .map(|path| scope.spawn(|| start_server_for_path(path, processes)))
+            .collect();
+
+        handles
+            .into_iter()
+            .filter_map(|handle| handle.join().ok().flatten())
+            .collect::<Vec<_>>()
+    });
 
     Ok(servers)
 }

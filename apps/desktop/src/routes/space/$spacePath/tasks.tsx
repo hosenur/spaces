@@ -7,15 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useConfigStore } from "@/stores/config-store";
 import type { Task } from "@/types/config";
-import { decodeSpacePath } from "@/lib/space-path";
+import type { SpaceRouteContext } from "./route";
 
 export const Route = createFileRoute("/space/$spacePath/tasks")({
   component: TasksPage,
 });
 
 function TasksPage() {
-  const { spacePath } = Route.useParams();
-  const decodedPath = decodeSpacePath(spacePath);
+  const { spacePath } = Route.useRouteContext() as SpaceRouteContext;
   const [newTaskText, setNewTaskText] = useState("");
 
   const config = useConfigStore((state) => state.config);
@@ -23,12 +22,12 @@ function TasksPage() {
   const removeTask = useConfigStore((state) => state.removeTask);
   const toggleTask = useConfigStore((state) => state.toggleTask);
 
-  const spaceConfig = config?.spaces.find((s) => s.cloned_path === decodedPath);
+  const spaceConfig = config?.spaces.find((s) => s.cloned_path === spacePath);
   const tasks = spaceConfig?.tasks || [];
 
   async function handleAddTask() {
     if (!newTaskText.trim()) return;
-    await addTask(decodedPath, newTaskText.trim());
+    await addTask(spacePath, newTaskText.trim());
     setNewTaskText("");
   }
 
@@ -81,7 +80,7 @@ function TasksPage() {
                 >
                   <Checkbox
                     isSelected={task.completed}
-                    onChange={() => toggleTask(decodedPath, task.id)}
+                    onChange={() => toggleTask(spacePath, task.id)}
                     className="size-4 rounded-[3px] data-[selected=true]:bg-foreground data-[selected=true]:border-foreground transition-all"
                   />
                   <span
@@ -96,7 +95,7 @@ function TasksPage() {
                   <Button
                     size="sq-xs"
                     intent="plain"
-                    onPress={() => removeTask(decodedPath, task.id)}
+                    onPress={() => removeTask(spacePath, task.id)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 size-6"
                   >
                     <HugeiconsIcon icon={Delete02Icon} className="size-3.5 text-muted-fg hover:text-red-500/80 transition-colors" />

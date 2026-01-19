@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -55,6 +56,10 @@ pub fn run_command(
     if let Some(dir) = current_dir {
         cmd.current_dir(dir);
     }
+    let extended_path = get_extended_path();
+    if !extended_path.is_empty() {
+        cmd.env("PATH", extended_path);
+    }
     cmd.output()
         .map_err(|e| format!("Failed to execute {}: {}", command, e))
 }
@@ -75,4 +80,25 @@ pub fn run_command_checked(
             String::from_utf8_lossy(&output.stderr)
         ))
     }
+}
+
+pub fn get_extended_path() -> String {
+    let current_path = env::var("PATH").unwrap_or_default();
+    let home = dirs::home_dir()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let extra_paths = [
+        format!("{}/.opencode/bin", home),
+        format!("{}/.local/bin", home),
+        format!("{}/bin", home),
+        "/usr/local/bin".to_string(),
+        "/opt/homebrew/bin".to_string(),
+    ];
+
+    let mut all_paths: Vec<String> = extra_paths.into_iter().collect();
+    if !current_path.is_empty() {
+        all_paths.push(current_path);
+    }
+    all_paths.join(":")
 }

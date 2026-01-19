@@ -216,7 +216,18 @@ pub fn get_github_issues(path: &str) -> Result<Vec<GithubIssue>, String> {
         "200",
     ];
 
-    let output = run_command("gh", &args, Some(&space_path))?;
+    let output = match run_command("gh", &args, Some(&space_path)) {
+        Ok(output) => output,
+        Err(err) => {
+            if err.contains("No such file or directory") {
+                return Err(
+                    "GitHub CLI (gh) not found in PATH. Install it and run `gh auth login`."
+                        .to_string(),
+                );
+            }
+            return Err(err);
+        }
+    };
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }

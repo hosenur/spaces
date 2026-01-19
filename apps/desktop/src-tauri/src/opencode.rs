@@ -1,8 +1,7 @@
-use crate::helpers::{normalize_space_path, space_root, SPACE_METADATA_FILE};
+use crate::helpers::{get_extended_path, normalize_space_path, space_root, SPACE_METADATA_FILE};
 use rand::Rng;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::env;
 use std::fs;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,27 +20,6 @@ fn get_opencode_binary() -> String {
     }
     // Fall back to just "opencode" and hope it's in PATH
     "opencode".to_string()
-}
-
-/// Get an extended PATH that includes common binary directories.
-/// This is needed because macOS apps launched from Finder don't inherit the shell's PATH.
-fn get_extended_path() -> String {
-    let current_path = env::var("PATH").unwrap_or_default();
-    let home = dirs::home_dir().map(|h| h.to_string_lossy().to_string()).unwrap_or_default();
-
-    let extra_paths = [
-        format!("{}/.opencode/bin", home),
-        format!("{}/.local/bin", home),
-        format!("{}/bin", home),
-        "/usr/local/bin".to_string(),
-        "/opt/homebrew/bin".to_string(),
-    ];
-
-    let mut all_paths: Vec<String> = extra_paths.into_iter().collect();
-    if !current_path.is_empty() {
-        all_paths.push(current_path);
-    }
-    all_paths.join(":")
 }
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);

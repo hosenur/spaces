@@ -1,4 +1,4 @@
-import { type ComponentProps } from "react";
+import { type ComponentProps, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Message01Icon, RefreshIcon, Add01Icon } from "@hugeicons/core-free-icons";
 import { useNavigate } from "@tanstack/react-router";
@@ -28,6 +28,8 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
   const sessionStates = useChatStore((state) =>
     currentSpacePath ? state.spaces[currentSpacePath]?.sessions ?? EMPTY_SESSION_STATES : EMPTY_SESSION_STATES
   );
+  const isCreatingRef = useRef(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
 
   const port = currentSpacePath ? getPort(currentSpacePath) : undefined;
 
@@ -37,14 +39,21 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
     : { sessions: [], isLoading: false, error: null };
 
   async function handleNewSession() {
-    if (!currentSpacePath || !port) return;
-    const session = await createSession(port, currentSpacePath);
-    if (session) {
-      const spacePath = encodeSpacePath(currentSpacePath);
-      navigate({
-        to: "/space/$spacePath/session/$sessionId",
-        params: { spacePath, sessionId: session.id },
-      });
+    if (!currentSpacePath || !port || isCreatingRef.current) return;
+    isCreatingRef.current = true;
+    setIsCreatingSession(true);
+    try {
+      const session = await createSession(port, currentSpacePath);
+      if (session) {
+        const spacePath = encodeSpacePath(currentSpacePath);
+        navigate({
+          to: "/space/$spacePath/session/$sessionId",
+          params: { spacePath, sessionId: session.id },
+        });
+      }
+    } finally {
+      isCreatingRef.current = false;
+      setIsCreatingSession(false);
     }
   }
 
@@ -79,7 +88,7 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
                 intent="plain"
                 size="sq-sm"
                 onPress={handleNewSession}
-                isDisabled={isLoading}
+                isDisabled={isLoading || isCreatingSession}
               >
                 <HugeiconsIcon icon={Add01Icon} className="size-4" />
               </Button>

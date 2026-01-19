@@ -88,15 +88,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         }
 
         const session: Session = await response.json();
-        set((state) => ({
-          spaces: {
-            ...state.spaces,
-            [spacePath]: {
-              ...(state.spaces[spacePath] ?? DEFAULT_SPACE_SESSION_STATE),
-              sessions: [session, ...(state.spaces[spacePath]?.sessions ?? [])],
-            },
-          },
-        }));
+        get().upsertSession(spacePath, session);
         return session;
       } catch (err) {
         console.error("Failed to create session:", err);

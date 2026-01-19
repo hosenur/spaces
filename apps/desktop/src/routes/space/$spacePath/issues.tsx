@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
-import { open } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/ui/loader";
 import { decodeSpacePath } from "@/lib/space-path";
@@ -106,7 +106,7 @@ function IssuesPage() {
                         type="button"
                         className="text-sm text-foreground/90 hover:text-foreground transition-colors text-left"
                         onClick={() => {
-                          void open(issue.url);
+                          void openUrl(issue.url);
                         }}
                       >
                         {issue.title}
@@ -152,7 +152,7 @@ function IssuesPage() {
                     intent="plain"
                     size="xs"
                     onPress={() => {
-                      void open(issue.url);
+                      void openUrl(issue.url);
                     }}
                     className="opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                   >

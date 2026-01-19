@@ -1,7 +1,7 @@
 {
   "name": "spaces-monorepo",
   "private": true,
-  "version": "0.1.10",
+  "version": "0.1.11",
   "type": "module",
   "scripts": {
     "dev:desktop": "bun --cwd apps/desktop dev",

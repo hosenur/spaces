@@ -57,7 +57,6 @@ pub fn run() {
 
                 let state = window.state::<AppState>();
                 if !state.try_begin_shutdown() {
-                    api.prevent_close();
                     return;
                 }
 
@@ -110,14 +109,28 @@ pub fn run() {
         .expect("error while running tauri application");
 
     app.run(|app_handle, event| {
-        if let tauri::RunEvent::ExitRequested { api, .. } = event {
-            let state = app_handle.state::<AppState>();
-            if !state.try_begin_shutdown() {
-                return;
-            }
+        match event {
+            tauri::RunEvent::ExitRequested { api, code, .. } => {
+                let state = app_handle.state::<AppState>();
+                if !state.try_begin_shutdown() {
+                    return;
+                }
 
-            api.prevent_exit();
-            spawn_shutdown(app_handle.clone(), None);
+                if code == Some(tauri::RESTART_EXIT_CODE) {
+                    state.shutdown_opencode_processes();
+                    return;
+                }
+
+                api.prevent_exit();
+                spawn_shutdown(app_handle.clone(), None);
+            }
+            tauri::RunEvent::Exit => {
+                let state = app_handle.state::<AppState>();
+                if state.try_begin_shutdown() {
+                    state.shutdown_opencode_processes();
+                }
+            }
+            _ => {}
         }
     });
 }

@@ -146,10 +146,17 @@ jobs:
           # Initialize the platforms object
           PLATFORMS='{}'
           
-          # Check for macOS aarch64 bundle
+          # Check for macOS aarch64 bundle (versioned or unversioned)
+          MAC_AARCH64_BUNDLE=""
           if [ -f "release-assets/spaces_${VERSION}_aarch64.app.tar.gz" ]; then
-            SIG=$(cat "release-assets/spaces_${VERSION}_aarch64.app.tar.gz.sig" 2>/dev/null || echo "")
-            PLATFORMS=$(echo "$PLATFORMS" | jq --arg sig "$SIG" --arg url "https://github.com/hosenur/spaces/releases/download/v${VERSION}/spaces_${VERSION}_aarch64.app.tar.gz" \
+            MAC_AARCH64_BUNDLE="spaces_${VERSION}_aarch64.app.tar.gz"
+          elif [ -f "release-assets/spaces.app.tar.gz" ]; then
+            MAC_AARCH64_BUNDLE="spaces.app.tar.gz"
+          fi
+          
+          if [ -n "$MAC_AARCH64_BUNDLE" ]; then
+            SIG=$(cat "release-assets/${MAC_AARCH64_BUNDLE}.sig" 2>/dev/null || echo "")
+            PLATFORMS=$(echo "$PLATFORMS" | jq --arg sig "$SIG" --arg url "https://github.com/hosenur/spaces/releases/download/v${VERSION}/${MAC_AARCH64_BUNDLE}" \
               '. + {"darwin-aarch64": {"signature": $sig, "url": $url}}')
           fi
           

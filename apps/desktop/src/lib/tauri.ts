@@ -30,6 +30,10 @@ export async function getGithubIssues(path: string): Promise<GithubIssue[]> {
   return invoke("get_github_issues", { path });
 }
 
+export async function getGithubIssue(path: string, number: number): Promise<GithubIssue> {
+  return invoke("get_github_issue", { path, number });
+}
+
 export async function getConfig(): Promise<AppConfig> {
   return invoke("get_config");
 }

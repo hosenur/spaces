@@ -25,15 +25,19 @@ export const links: Route.LinksFunction = () => [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className="dark">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
       </head>
-      <body className="flex flex-col min-h-screen">
-        <RootProvider>{children}</RootProvider>
+      <body className="flex flex-col min-h-screen bg-[#030303] text-white overflow-x-hidden">
+        <RootProvider
+          theme={{ forcedTheme: "dark", defaultTheme: "dark", enableSystem: false }}
+        >
+          {children}
+        </RootProvider>
         <ScrollRestoration />
         <Scripts />
       </body>

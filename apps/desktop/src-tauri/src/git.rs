@@ -29,6 +29,7 @@ pub struct GithubIssue {
     pub title: String,
     pub state: String,
     pub url: String,
+    pub body: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub labels: Vec<GithubLabel>,
@@ -436,40 +437,87 @@ fn resolve_github_repo(space_path: &Path) -> Result<GithubRepoRef, String> {
 }
 
 #[tauri::command]
-pub fn get_github_issues(path: &str) -> Result<Vec<GithubIssue>, String> {
-    let space_path = validate_space_path(path)?;
-    let repo = resolve_github_repo(&space_path)?;
-    let repo_ref = repo.as_cli_repo();
-    let repo_arg = repo_ref.as_str();
-    let args = [
-        "issue",
-        "list",
-        "--repo",
-        repo_arg,
-        "--json",
-        "number,title,state,url,labels,assignees,author,createdAt,updatedAt",
-        "--state",
-        "all",
-        "--limit",
-        "200",
-    ];
+pub async fn get_github_issues(path: &str) -> Result<Vec<GithubIssue>, String> {
+    let path = path.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let space_path = validate_space_path(&path)?;
+        let repo = resolve_github_repo(&space_path)?;
+        let repo_ref = repo.as_cli_repo();
+        let repo_arg = repo_ref.as_str();
+        let args = [
+            "issue",
+            "list",
+            "--repo",
+            repo_arg,
+            "--json",
+            "number,title,state,url,labels,assignees,author,createdAt,updatedAt",
+            "--state",
+            "all",
+            "--limit",
+            "200",
+        ];
 
-    let output = match run_command("gh", &args, Some(&space_path)) {
-        Ok(output) => output,
-        Err(err) => {
-            if err.contains("No such file or directory") {
-                return Err(
-                    "GitHub CLI (gh) not found in PATH. Install it and run `gh auth login`."
-                        .to_string(),
-                );
+        let output = match run_command("gh", &args, Some(&space_path)) {
+            Ok(output) => output,
+            Err(err) => {
+                if err.contains("No such file or directory") {
+                    return Err(
+                        "GitHub CLI (gh) not found in PATH. Install it and run `gh auth login`."
+                            .to_string(),
+                    );
+                }
+                return Err(err);
             }
-            return Err(err);
+        };
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).to_string());
         }
-    };
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
-    }
 
-    serde_json::from_slice::<Vec<GithubIssue>>(&output.stdout)
-        .map_err(|e| format!("Failed to parse issues: {}", e))
+        serde_json::from_slice::<Vec<GithubIssue>>(&output.stdout)
+            .map_err(|e| format!("Failed to parse issues: {}", e))
+    })
+    .await
+    .map_err(|err| format!("Failed to load GitHub issues: {}", err))?
+}
+
+#[tauri::command]
+pub async fn get_github_issue(path: &str, number: i64) -> Result<GithubIssue, String> {
+    let path = path.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let space_path = validate_space_path(&path)?;
+        let repo = resolve_github_repo(&space_path)?;
+        let repo_ref = repo.as_cli_repo();
+        let repo_arg = repo_ref.as_str();
+        let number_arg = number.to_string();
+        let args = [
+            "issue",
+            "view",
+            number_arg.as_str(),
+            "--repo",
+            repo_arg,
+            "--json",
+            "number,title,state,url,labels,assignees,author,createdAt,updatedAt,body",
+        ];
+
+        let output = match run_command("gh", &args, Some(&space_path)) {
+            Ok(output) => output,
+            Err(err) => {
+                if err.contains("No such file or directory") {
+                    return Err(
+                        "GitHub CLI (gh) not found in PATH. Install it and run `gh auth login`."
+                            .to_string(),
+                    );
+                }
+                return Err(err);
+            }
+        };
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        }
+
+        serde_json::from_slice::<GithubIssue>(&output.stdout)
+            .map_err(|e| format!("Failed to parse issue: {}", e))
+    })
+    .await
+    .map_err(|err| format!("Failed to load GitHub issue: {}", err))?
 }

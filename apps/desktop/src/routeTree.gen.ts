@@ -17,6 +17,7 @@ import { Route as SpaceSpacePathIndexRouteImport } from './routes/space/$spacePa
 import { Route as SpaceSpacePathTasksRouteImport } from './routes/space/$spacePath/tasks'
 import { Route as SpaceSpacePathIssuesRouteImport } from './routes/space/$spacePath/issues'
 import { Route as SpaceSpacePathSessionSessionIdRouteImport } from './routes/space/$spacePath/session/$sessionId'
+import { Route as SpaceSpacePathIssuesIssueIdRouteImport } from './routes/space/$spacePath/issues/$issueId'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -59,24 +60,32 @@ const SpaceSpacePathSessionSessionIdRoute =
     path: '/session/$sessionId',
     getParentRoute: () => SpaceSpacePathRouteRoute,
   } as any)
+const SpaceSpacePathIssuesIssueIdRoute =
+  SpaceSpacePathIssuesIssueIdRouteImport.update({
+    id: '/$issueId',
+    path: '/$issueId',
+    getParentRoute: () => SpaceSpacePathIssuesRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/diffs': typeof DiffsRoute
   '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
-  '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRoute
+  '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRouteWithChildren
   '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath/': typeof SpaceSpacePathIndexRoute
+  '/space/$spacePath/issues/$issueId': typeof SpaceSpacePathIssuesIssueIdRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/diffs': typeof DiffsRoute
   '/settings': typeof SettingsRoute
-  '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRoute
+  '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRouteWithChildren
   '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath': typeof SpaceSpacePathIndexRoute
+  '/space/$spacePath/issues/$issueId': typeof SpaceSpacePathIssuesIssueIdRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
 export interface FileRoutesById {
@@ -85,9 +94,10 @@ export interface FileRoutesById {
   '/diffs': typeof DiffsRoute
   '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
-  '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRoute
+  '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRouteWithChildren
   '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath/': typeof SpaceSpacePathIndexRoute
+  '/space/$spacePath/issues/$issueId': typeof SpaceSpacePathIssuesIssueIdRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/space/$spacePath/issues'
     | '/space/$spacePath/tasks'
     | '/space/$spacePath/'
+    | '/space/$spacePath/issues/$issueId'
     | '/space/$spacePath/session/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/space/$spacePath/issues'
     | '/space/$spacePath/tasks'
     | '/space/$spacePath'
+    | '/space/$spacePath/issues/$issueId'
     | '/space/$spacePath/session/$sessionId'
   id:
     | '__root__'
@@ -119,6 +131,7 @@ export interface FileRouteTypes {
     | '/space/$spacePath/issues'
     | '/space/$spacePath/tasks'
     | '/space/$spacePath/'
+    | '/space/$spacePath/issues/$issueId'
     | '/space/$spacePath/session/$sessionId'
   fileRoutesById: FileRoutesById
 }
@@ -187,18 +200,36 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpaceSpacePathSessionSessionIdRouteImport
       parentRoute: typeof SpaceSpacePathRouteRoute
     }
+    '/space/$spacePath/issues/$issueId': {
+      id: '/space/$spacePath/issues/$issueId'
+      path: '/$issueId'
+      fullPath: '/space/$spacePath/issues/$issueId'
+      preLoaderRoute: typeof SpaceSpacePathIssuesIssueIdRouteImport
+      parentRoute: typeof SpaceSpacePathIssuesRoute
+    }
   }
 }
 
+interface SpaceSpacePathIssuesRouteChildren {
+  SpaceSpacePathIssuesIssueIdRoute: typeof SpaceSpacePathIssuesIssueIdRoute
+}
+
+const SpaceSpacePathIssuesRouteChildren: SpaceSpacePathIssuesRouteChildren = {
+  SpaceSpacePathIssuesIssueIdRoute: SpaceSpacePathIssuesIssueIdRoute,
+}
+
+const SpaceSpacePathIssuesRouteWithChildren =
+  SpaceSpacePathIssuesRoute._addFileChildren(SpaceSpacePathIssuesRouteChildren)
+
 interface SpaceSpacePathRouteRouteChildren {
-  SpaceSpacePathIssuesRoute: typeof SpaceSpacePathIssuesRoute
+  SpaceSpacePathIssuesRoute: typeof SpaceSpacePathIssuesRouteWithChildren
   SpaceSpacePathTasksRoute: typeof SpaceSpacePathTasksRoute
   SpaceSpacePathIndexRoute: typeof SpaceSpacePathIndexRoute
   SpaceSpacePathSessionSessionIdRoute: typeof SpaceSpacePathSessionSessionIdRoute
 }
 
 const SpaceSpacePathRouteRouteChildren: SpaceSpacePathRouteRouteChildren = {
-  SpaceSpacePathIssuesRoute: SpaceSpacePathIssuesRoute,
+  SpaceSpacePathIssuesRoute: SpaceSpacePathIssuesRouteWithChildren,
   SpaceSpacePathTasksRoute: SpaceSpacePathTasksRoute,
   SpaceSpacePathIndexRoute: SpaceSpacePathIndexRoute,
   SpaceSpacePathSessionSessionIdRoute: SpaceSpacePathSessionSessionIdRoute,

@@ -17,6 +17,7 @@ export interface GithubIssue {
   title: string;
   state: string;
   url: string;
+  body?: string;
   createdAt: string;
   updatedAt: string;
   labels: GithubLabel[];

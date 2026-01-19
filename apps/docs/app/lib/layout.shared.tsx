@@ -5,5 +5,8 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       title: "React Router",
     },
+    themeSwitch: {
+      enabled: false,
+    },
   };
 }

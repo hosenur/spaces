@@ -3852,7 +3852,7 @@ dependencies = [
 
 [[package]]
 name = "spaces"
-version = "0.1.7"
+version = "0.1.15"
 dependencies = [
  "dirs 5.0.1",
  "libc",

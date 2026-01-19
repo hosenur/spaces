@@ -65,8 +65,8 @@ export interface FileRoutesByFullPath {
   '/diffs': typeof DiffsRoute
   '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
-  '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRoute
+  '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath/': typeof SpaceSpacePathIndexRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
@@ -74,8 +74,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/diffs': typeof DiffsRoute
   '/settings': typeof SettingsRoute
-  '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRoute
+  '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath': typeof SpaceSpacePathIndexRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
@@ -85,8 +85,8 @@ export interface FileRoutesById {
   '/diffs': typeof DiffsRoute
   '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
-  '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRoute
+  '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
   '/space/$spacePath/': typeof SpaceSpacePathIndexRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
@@ -97,8 +97,8 @@ export interface FileRouteTypes {
     | '/diffs'
     | '/settings'
     | '/space/$spacePath'
-    | '/space/$spacePath/tasks'
     | '/space/$spacePath/issues'
+    | '/space/$spacePath/tasks'
     | '/space/$spacePath/'
     | '/space/$spacePath/session/$sessionId'
   fileRoutesByTo: FileRoutesByTo
@@ -106,8 +106,8 @@ export interface FileRouteTypes {
     | '/'
     | '/diffs'
     | '/settings'
-    | '/space/$spacePath/tasks'
     | '/space/$spacePath/issues'
+    | '/space/$spacePath/tasks'
     | '/space/$spacePath'
     | '/space/$spacePath/session/$sessionId'
   id:
@@ -116,8 +116,8 @@ export interface FileRouteTypes {
     | '/diffs'
     | '/settings'
     | '/space/$spacePath'
-    | '/space/$spacePath/tasks'
     | '/space/$spacePath/issues'
+    | '/space/$spacePath/tasks'
     | '/space/$spacePath/'
     | '/space/$spacePath/session/$sessionId'
   fileRoutesById: FileRoutesById
@@ -191,15 +191,15 @@ declare module '@tanstack/react-router' {
 }
 
 interface SpaceSpacePathRouteRouteChildren {
-  SpaceSpacePathTasksRoute: typeof SpaceSpacePathTasksRoute
   SpaceSpacePathIssuesRoute: typeof SpaceSpacePathIssuesRoute
+  SpaceSpacePathTasksRoute: typeof SpaceSpacePathTasksRoute
   SpaceSpacePathIndexRoute: typeof SpaceSpacePathIndexRoute
   SpaceSpacePathSessionSessionIdRoute: typeof SpaceSpacePathSessionSessionIdRoute
 }
 
 const SpaceSpacePathRouteRouteChildren: SpaceSpacePathRouteRouteChildren = {
-  SpaceSpacePathTasksRoute: SpaceSpacePathTasksRoute,
   SpaceSpacePathIssuesRoute: SpaceSpacePathIssuesRoute,
+  SpaceSpacePathTasksRoute: SpaceSpacePathTasksRoute,
   SpaceSpacePathIndexRoute: SpaceSpacePathIndexRoute,
   SpaceSpacePathSessionSessionIdRoute: SpaceSpacePathSessionSessionIdRoute,
 }

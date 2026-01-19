@@ -5,6 +5,7 @@ import type { SessionState, SpaceSessionState } from "./types";
 const DEFAULT_SPACE_SESSION_STATE: SpaceSessionState = {
   sessions: [],
   isLoading: false,
+  hasFetched: false,
   error: null,
 };
 
@@ -48,26 +49,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set((state) => ({
         spaces: {
           ...state.spaces,
-          [spacePath]: {
-            sessions: data,
-            isLoading: false,
-            error: null,
-          },
+        [spacePath]: {
+          sessions: data,
+          isLoading: false,
+          hasFetched: true,
+          error: null,
         },
-      }));
-    } catch (err) {
-      set((state) => ({
-        spaces: {
-          ...state.spaces,
-          [spacePath]: {
-            sessions: [],
-            isLoading: false,
-            error: err instanceof Error ? err.message : "Failed to fetch sessions",
-          },
+      },
+    }));
+  } catch (err) {
+    set((state) => ({
+      spaces: {
+        ...state.spaces,
+        [spacePath]: {
+          sessions: [],
+          isLoading: false,
+          hasFetched: true,
+          error: err instanceof Error ? err.message : "Failed to fetch sessions",
         },
-      }));
-    }
-  },
+      },
+    }));
+  }
+},
 
   createSession: async (port: number, spacePath: string) => {
     if (!port) return null;

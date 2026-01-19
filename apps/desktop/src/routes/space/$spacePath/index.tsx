@@ -14,7 +14,7 @@ function SpaceIndex() {
   const decodedPath = decodeSpacePath(spacePath);
   const { currentSpacePath, isServerBooting, getPort } = useConnectionStore();
   const { getSpaceSessions, createSession } = useSessionStore();
-  const { sessions, isLoading: isLoadingSessions } = getSpaceSessions(decodedPath);
+  const { sessions, isLoading: isLoadingSessions, hasFetched, error } = getSpaceSessions(decodedPath);
   const isCreatingSession = useRef(false);
   const port = getPort(decodedPath);
 
@@ -25,7 +25,7 @@ function SpaceIndex() {
 
   // When server is ready and sessions are loaded, either navigate to latest or create new
   useEffect(() => {
-    if (!port || isServerBooting || isLoadingSessions) return;
+    if (!port || isServerBooting || isLoadingSessions || !hasFetched || error) return;
 
     if (sessions.length > 0) {
       // Sort by created time (descending) and get the latest
@@ -64,6 +64,8 @@ function SpaceIndex() {
     port,
     isServerBooting,
     isLoadingSessions,
+    hasFetched,
+    error,
     sessions,
     spacePath,
     decodedPath,

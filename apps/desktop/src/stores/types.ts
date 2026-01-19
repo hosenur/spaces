@@ -20,6 +20,7 @@ export interface ConnectionState {
 export interface SpaceSessionState {
   sessions: Session[];
   isLoading: boolean;
+  hasFetched: boolean;
   error: string | null;
 }
 

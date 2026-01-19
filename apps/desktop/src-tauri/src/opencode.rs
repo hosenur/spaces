@@ -3,6 +3,8 @@ use rand::Rng;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -24,6 +26,58 @@ fn get_opencode_binary() -> String {
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(3);
+const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(150);
+const HEALTHCHECK_TIMEOUT: Duration = Duration::from_millis(250);
+
+fn is_child_running(child: &mut Child) -> bool {
+    match child.try_wait() {
+        Ok(Some(_)) => false,
+        Ok(None) => true,
+        Err(_) => false,
+    }
+}
+
+fn is_server_healthy(port: u16) -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let timeout = HEALTHCHECK_TIMEOUT;
+    let mut stream = match TcpStream::connect_timeout(&addr, timeout) {
+        Ok(stream) => stream,
+        Err(_) => return false,
+    };
+
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+
+    let request = b"GET /session HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    if stream.write_all(request).is_err() {
+        return false;
+    }
+
+    let mut buf = [0u8; 12];
+    let read_len = match stream.read(&mut buf) {
+        Ok(len) => len,
+        Err(_) => return false,
+    };
+
+    read_len >= 4 && buf[..read_len].starts_with(b"HTTP")
+}
+
+fn wait_for_server(child: &mut Child, port: u16) -> bool {
+    let start = Instant::now();
+    loop {
+        if !is_child_running(child) {
+            return false;
+        }
+        if is_server_healthy(port) {
+            return true;
+        }
+        if start.elapsed() >= STARTUP_TIMEOUT {
+            return false;
+        }
+        thread::sleep(STARTUP_POLL_INTERVAL);
+    }
+}
 
 fn send_terminate(child: &Child) -> bool {
     #[cfg(unix)]
@@ -118,43 +172,71 @@ pub fn start_opencode_server(
     path: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<OpenCodeServer, String> {
-    let mut processes = state
-        .opencode_processes
-        .lock()
-        .map_err(|e| format!("Failed to lock state: {}", e))?;
     let canonical_path = normalize_space_path(&path)?;
 
-    if let Some((_child, port)) = processes.get(&canonical_path) {
+    loop {
+        let mut processes = state
+            .opencode_processes
+            .lock()
+            .map_err(|e| format!("Failed to lock state: {}", e))?;
+
+        if let Some((child, port)) = processes.get_mut(&canonical_path) {
+            let port_value = *port;
+            if wait_for_server(child, port_value) {
+                return Ok(OpenCodeServer {
+                    path: canonical_path.clone(),
+                    port: port_value,
+                });
+            }
+
+            if let Some((child, _)) = processes.remove(&canonical_path) {
+                drop(processes);
+                shutdown_child_process(&canonical_path, child);
+            }
+            continue;
+        }
+
+        let port: u16 = rand::rng().random_range(10000..60000);
+
+        let mut child = Command::new(get_opencode_binary())
+            .args(["serve", "--port", &port.to_string()])
+            .current_dir(&canonical_path)
+            .env("PATH", get_extended_path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Failed to start opencode server: {}", e))?;
+
+        if !wait_for_server(&mut child, port) {
+            shutdown_child_process(&canonical_path, child);
+            return Err(format!(
+                "Opencode server failed to become ready on port {}",
+                port
+            ));
+        }
+
+        processes.insert(canonical_path.clone(), (child, port));
         return Ok(OpenCodeServer {
-            path: canonical_path.clone(),
-            port: *port,
+            path: canonical_path,
+            port,
         });
     }
-
-    let port: u16 = rand::rng().random_range(10000..60000);
-
-    let child = Command::new(get_opencode_binary())
-        .args(["serve", "--port", &port.to_string()])
-        .current_dir(&canonical_path)
-        .env("PATH", get_extended_path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("Failed to start opencode server: {}", e))?;
-
-    processes.insert(canonical_path.clone(), (child, port));
-
-    Ok(OpenCodeServer {
-        path: canonical_path,
-        port,
-    })
 }
 
 #[tauri::command]
 pub fn get_opencode_port(path: String, state: tauri::State<'_, AppState>) -> Option<u16> {
-    let processes = state.opencode_processes.lock().ok()?;
     let canonical_path = normalize_space_path(&path).ok()?;
-    processes.get(&canonical_path).map(|(_child, port)| *port)
+    let mut processes = state.opencode_processes.lock().ok()?;
+    let (child, port) = processes.get_mut(&canonical_path)?;
+    let port_value = *port;
+    if wait_for_server(child, port_value) {
+        return Some(port_value);
+    }
+
+    let (child, _) = processes.remove(&canonical_path)?;
+    drop(processes);
+    shutdown_child_process(&canonical_path, child);
+    None
 }
 
 #[tauri::command]
@@ -183,10 +265,6 @@ pub fn start_all_opencode_servers(
     }
 
     let mut servers = Vec::new();
-    let mut processes = state
-        .opencode_processes
-        .lock()
-        .map_err(|e| format!("Failed to lock state: {}", e))?;
 
     let entries = fs::read_dir(&space_dir)
         .map_err(|e| format!("Failed to read ~/.space directory: {}", e))?;
@@ -202,34 +280,8 @@ pub fn start_all_opencode_servers(
             let metadata_path = path.join(SPACE_METADATA_FILE);
             if metadata_path.exists() {
                 let path_str = path.to_string_lossy().to_string();
-
-                if processes.contains_key(&path_str) {
-                    let port = processes.get(&path_str).map(|(_, p)| *p).unwrap();
-                    servers.push(OpenCodeServer {
-                        path: path_str,
-                        port,
-                    });
-                    continue;
-                }
-
-                let port: u16 = rand::rng().random_range(10000..60000);
-
-                match Command::new(get_opencode_binary())
-                    .args(["serve", "--port", &port.to_string()])
-                    .current_dir(&path)
-                    .env("PATH", get_extended_path())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                {
-                    Ok(child) => {
-                        processes.insert(path_str.clone(), (child, port));
-                        servers.push(OpenCodeServer {
-                            path: path_str,
-                            port,
-                        });
-                    }
-                    Err(_) => continue,
+                if let Ok(server) = start_opencode_server(path_str, state.clone()) {
+                    servers.push(server);
                 }
             }
         }

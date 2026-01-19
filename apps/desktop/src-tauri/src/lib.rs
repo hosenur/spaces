@@ -28,6 +28,19 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+fn spawn_shutdown(app_handle: tauri::AppHandle, window_label: Option<String>) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle.state::<AppState>();
+        state.shutdown_opencode_processes();
+        if let Some(label) = window_label {
+            if let Some(window) = app_handle.get_webview_window(&label) {
+                let _ = window.destroy();
+            }
+        }
+        app_handle.exit(0);
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -36,6 +49,17 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(AppState::new())
+        .on_run_event(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let state = app_handle.state::<AppState>();
+                if !state.try_begin_shutdown() {
+                    return;
+                }
+
+                api.prevent_exit();
+                spawn_shutdown(app_handle.clone(), None);
+            }
+        })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() != "main" {
@@ -52,14 +76,7 @@ pub fn run() {
 
                 let app_handle = window.app_handle().clone();
                 let window_label = window.label().to_string();
-                tauri::async_runtime::spawn_blocking(move || {
-                    let state = app_handle.state::<AppState>();
-                    state.shutdown_opencode_processes();
-                    if let Some(window) = app_handle.get_webview_window(&window_label) {
-                        let _ = window.destroy();
-                    }
-                    app_handle.exit(0);
-                });
+                spawn_shutdown(app_handle, Some(window_label));
             }
         })
         .invoke_handler(tauri::generate_handler![

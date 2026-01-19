@@ -1,10 +1,11 @@
 import { useEffect } from "react";
-import { useChatStore } from "@/stores";
+import type { Session } from "@opencode-ai/sdk";
+import { useChatStore, useSessionStore } from "@/stores";
 
 interface SSEEvent {
   type: string;
   properties: {
-    info?: { sessionID: string };
+    info?: Session;
     part?: { sessionID: string };
     sessionID?: string;
     status?: { type: string };
@@ -18,6 +19,7 @@ interface UseSpaceEventsOptions {
 
 export function useSpaceEvents({ port, spacePath }: UseSpaceEventsOptions) {
   const setIsAssistantTyping = useChatStore((state) => state.setIsAssistantTyping);
+  const { upsertSession, removeSession } = useSessionStore();
 
   useEffect(() => {
     if (!port || !spacePath) return;
@@ -64,6 +66,16 @@ export function useSpaceEvents({ port, spacePath }: UseSpaceEventsOptions) {
 
         if (eventType === "message.part.updated") {
           updateTyping(properties?.part?.sessionID, true);
+        } else if (eventType === "session.updated" || eventType === "session.created") {
+          const sessionInfo = properties?.info;
+          if (sessionInfo?.id) {
+            upsertSession(spacePath, sessionInfo);
+          }
+        } else if (eventType === "session.deleted") {
+          const sessionInfo = properties?.info;
+          if (sessionInfo?.id) {
+            removeSession(spacePath, sessionInfo.id);
+          }
         } else if (eventType === "session.status") {
           const status = properties?.status?.type;
           if (status === "idle" || status === "completed") {
@@ -87,5 +99,5 @@ export function useSpaceEvents({ port, spacePath }: UseSpaceEventsOptions) {
       isActive = false;
       eventSource.close();
     };
-  }, [port, spacePath, setIsAssistantTyping]);
+  }, [port, spacePath, setIsAssistantTyping, upsertSession, removeSession]);
 }

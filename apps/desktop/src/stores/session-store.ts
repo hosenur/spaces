@@ -110,6 +110,43 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return session;
   },
 
+  upsertSession: (spacePath: string, session: Session) => {
+    set((state) => {
+      const current = state.spaces[spacePath] ?? DEFAULT_SPACE_SESSION_STATE;
+      const sessions = current.sessions;
+      const index = sessions.findIndex((item) => item.id === session.id);
+      const nextSessions =
+        index === -1
+          ? [session, ...sessions]
+          : sessions.map((item, idx) => (idx === index ? session : item));
+
+      return {
+        spaces: {
+          ...state.spaces,
+          [spacePath]: {
+            ...current,
+            sessions: nextSessions,
+          },
+        },
+      };
+    });
+  },
+
+  removeSession: (spacePath: string, sessionId: string) => {
+    set((state) => {
+      const current = state.spaces[spacePath] ?? DEFAULT_SPACE_SESSION_STATE;
+      return {
+        spaces: {
+          ...state.spaces,
+          [spacePath]: {
+            ...current,
+            sessions: current.sessions.filter((item) => item.id !== sessionId),
+          },
+        },
+      };
+    });
+  },
+
   clearSessions: (spacePath: string) => {
     set((state) => ({
       spaces: {

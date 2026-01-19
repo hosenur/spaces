@@ -28,6 +28,8 @@ export interface SessionState {
   getSpaceSessions: (spacePath: string) => SpaceSessionState;
   fetchSessions: (port: number, spacePath: string) => Promise<void>;
   createSession: (port: number, spacePath: string) => Promise<Session | null>;
+  upsertSession: (spacePath: string, session: Session) => void;
+  removeSession: (spacePath: string, sessionId: string) => void;
   clearSessions: (spacePath: string) => void;
 }
 

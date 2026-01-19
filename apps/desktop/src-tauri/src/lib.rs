@@ -43,23 +43,12 @@ fn spawn_shutdown(app_handle: tauri::AppHandle, window_label: Option<String>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(AppState::new())
-        .on_run_event(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { api, .. } = event {
-                let state = app_handle.state::<AppState>();
-                if !state.try_begin_shutdown() {
-                    return;
-                }
-
-                api.prevent_exit();
-                spawn_shutdown(app_handle.clone(), None);
-            }
-        })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() != "main" {
@@ -117,6 +106,18 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            let state = app_handle.state::<AppState>();
+            if !state.try_begin_shutdown() {
+                return;
+            }
+
+            api.prevent_exit();
+            spawn_shutdown(app_handle.clone(), None);
+        }
+    });
 }

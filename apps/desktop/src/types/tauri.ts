@@ -11,3 +11,25 @@ export interface ClonedRepo {
   cloned_path: string;
   cloned_name: string;
 }
+
+export interface GithubIssue {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  labels: GithubLabel[];
+  assignees: GithubUser[];
+  author?: GithubUser;
+}
+
+export interface GithubLabel {
+  name: string;
+  color: string;
+  description?: string | null;
+}
+
+export interface GithubUser {
+  login: string;
+}

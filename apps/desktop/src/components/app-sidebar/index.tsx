@@ -1,6 +1,6 @@
 import { type ComponentProps, useState, useEffect } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { PackageIcon, GitMergeIcon, Add01Icon, PlugSocketIcon, Archive04Icon, GitForkIcon, CheckListIcon, Settings02Icon } from "@hugeicons/core-free-icons";
+import { PackageIcon, GitMergeIcon, Add01Icon, PlugSocketIcon, Archive04Icon, GitForkIcon, CheckListIcon, Settings02Icon, Alert02Icon } from "@hugeicons/core-free-icons";
 import { EllipsisHorizontalIcon } from "@heroicons/react/16/solid";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -213,6 +213,11 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
     navigate({ to: "/space/$spacePath/tasks", params: { spacePath: encodedPath } });
   }
 
+  function handleIssuesClick(clonedPath: string) {
+    const encodedPath = encodeSpacePath(clonedPath);
+    navigate({ to: "/space/$spacePath/issues", params: { spacePath: encodedPath } });
+  }
+
   return (
     <Sidebar {...props}>
       <SidebarContent>
@@ -234,6 +239,14 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
               >
                 <HugeiconsIcon icon={CheckListIcon} data-slot="icon" className="size-4" />
                 <SidebarLabel>Tasks</SidebarLabel>
+              </SidebarItem>
+              <SidebarItem
+                href="#"
+                className="text-muted-fg"
+                onPress={() => handleIssuesClick(group.clones[0]?.cloned_path || "")}
+              >
+                <HugeiconsIcon icon={Alert02Icon} data-slot="icon" className="size-4" />
+                <SidebarLabel>Issues</SidebarLabel>
               </SidebarItem>
               <SidebarItem
                 href="#"

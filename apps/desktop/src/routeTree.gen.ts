@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SpaceSpacePathRouteRouteImport } from './routes/space/$spacePath/route'
 import { Route as SpaceSpacePathIndexRouteImport } from './routes/space/$spacePath/index'
 import { Route as SpaceSpacePathTasksRouteImport } from './routes/space/$spacePath/tasks'
+import { Route as SpaceSpacePathIssuesRouteImport } from './routes/space/$spacePath/issues'
 import { Route as SpaceSpacePathSessionSessionIdRouteImport } from './routes/space/$spacePath/session/$sessionId'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -47,6 +48,11 @@ const SpaceSpacePathTasksRoute = SpaceSpacePathTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => SpaceSpacePathRouteRoute,
 } as any)
+const SpaceSpacePathIssuesRoute = SpaceSpacePathIssuesRouteImport.update({
+  id: '/issues',
+  path: '/issues',
+  getParentRoute: () => SpaceSpacePathRouteRoute,
+} as any)
 const SpaceSpacePathSessionSessionIdRoute =
   SpaceSpacePathSessionSessionIdRouteImport.update({
     id: '/session/$sessionId',
@@ -60,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
   '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
+  '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRoute
   '/space/$spacePath/': typeof SpaceSpacePathIndexRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/diffs': typeof DiffsRoute
   '/settings': typeof SettingsRoute
   '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
+  '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRoute
   '/space/$spacePath': typeof SpaceSpacePathIndexRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/space/$spacePath': typeof SpaceSpacePathRouteRouteWithChildren
   '/space/$spacePath/tasks': typeof SpaceSpacePathTasksRoute
+  '/space/$spacePath/issues': typeof SpaceSpacePathIssuesRoute
   '/space/$spacePath/': typeof SpaceSpacePathIndexRoute
   '/space/$spacePath/session/$sessionId': typeof SpaceSpacePathSessionSessionIdRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/space/$spacePath'
     | '/space/$spacePath/tasks'
+    | '/space/$spacePath/issues'
     | '/space/$spacePath/'
     | '/space/$spacePath/session/$sessionId'
   fileRoutesByTo: FileRoutesByTo
@@ -97,6 +107,7 @@ export interface FileRouteTypes {
     | '/diffs'
     | '/settings'
     | '/space/$spacePath/tasks'
+    | '/space/$spacePath/issues'
     | '/space/$spacePath'
     | '/space/$spacePath/session/$sessionId'
   id:
@@ -106,6 +117,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/space/$spacePath'
     | '/space/$spacePath/tasks'
+    | '/space/$spacePath/issues'
     | '/space/$spacePath/'
     | '/space/$spacePath/session/$sessionId'
   fileRoutesById: FileRoutesById
@@ -161,6 +173,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpaceSpacePathTasksRouteImport
       parentRoute: typeof SpaceSpacePathRouteRoute
     }
+    '/space/$spacePath/issues': {
+      id: '/space/$spacePath/issues'
+      path: '/issues'
+      fullPath: '/space/$spacePath/issues'
+      preLoaderRoute: typeof SpaceSpacePathIssuesRouteImport
+      parentRoute: typeof SpaceSpacePathRouteRoute
+    }
     '/space/$spacePath/session/$sessionId': {
       id: '/space/$spacePath/session/$sessionId'
       path: '/session/$sessionId'
@@ -173,12 +192,14 @@ declare module '@tanstack/react-router' {
 
 interface SpaceSpacePathRouteRouteChildren {
   SpaceSpacePathTasksRoute: typeof SpaceSpacePathTasksRoute
+  SpaceSpacePathIssuesRoute: typeof SpaceSpacePathIssuesRoute
   SpaceSpacePathIndexRoute: typeof SpaceSpacePathIndexRoute
   SpaceSpacePathSessionSessionIdRoute: typeof SpaceSpacePathSessionSessionIdRoute
 }
 
 const SpaceSpacePathRouteRouteChildren: SpaceSpacePathRouteRouteChildren = {
   SpaceSpacePathTasksRoute: SpaceSpacePathTasksRoute,
+  SpaceSpacePathIssuesRoute: SpaceSpacePathIssuesRoute,
   SpaceSpacePathIndexRoute: SpaceSpacePathIndexRoute,
   SpaceSpacePathSessionSessionIdRoute: SpaceSpacePathSessionSessionIdRoute,
 }

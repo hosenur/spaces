@@ -1,5 +1,5 @@
 use crate::helpers::{run_command, validate_space_path};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
 use std::path::Path;
@@ -20,6 +20,32 @@ pub struct GitDiff {
     pub diff: String,
     pub additions: i32,
     pub deletions: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubIssue {
+    pub number: i64,
+    pub title: String,
+    pub state: String,
+    pub url: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub labels: Vec<GithubLabel>,
+    pub assignees: Vec<GithubUser>,
+    pub author: Option<GithubUser>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GithubLabel {
+    pub name: String,
+    pub color: String,
+    pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GithubUser {
+    pub login: String,
 }
 
 const MAX_UNTRACKED_BYTES: u64 = 256 * 1024;
@@ -174,4 +200,27 @@ pub fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
     }
 
     Ok(diffs)
+}
+
+#[tauri::command]
+pub fn get_github_issues(path: &str) -> Result<Vec<GithubIssue>, String> {
+    let space_path = validate_space_path(path)?;
+    let args = [
+        "issue",
+        "list",
+        "--json",
+        "number,title,state,url,labels,assignees,author,createdAt,updatedAt",
+        "--state",
+        "all",
+        "--limit",
+        "200",
+    ];
+
+    let output = run_command("gh", &args, Some(&space_path))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+
+    serde_json::from_slice::<Vec<GithubIssue>>(&output.stdout)
+        .map_err(|e| format!("Failed to parse issues: {}", e))
 }

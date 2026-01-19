@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppConfig, AsanaAuth, Task } from "@/types/config";
-import type { ClonedRepo, GitDiff } from "@/types/tauri";
+import type { ClonedRepo, GitDiff, GithubIssue } from "@/types/tauri";
 
 export async function validateGitFolder(path: string): Promise<boolean> {
   return invoke("validate_git_folder", { path });
@@ -24,6 +24,10 @@ export async function archiveSpace(path: string): Promise<void> {
 
 export async function getGitDiffs(path: string): Promise<GitDiff[]> {
   return invoke("get_git_diffs", { path });
+}
+
+export async function getGithubIssues(path: string): Promise<GithubIssue[]> {
+  return invoke("get_github_issues", { path });
 }
 
 export async function getConfig(): Promise<AppConfig> {

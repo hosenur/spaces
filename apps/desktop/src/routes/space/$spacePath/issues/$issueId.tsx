@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert02Icon, LinkSquare02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -7,8 +6,7 @@ import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/ui/loader";
 import { formatTimeAgo } from "@/lib/time";
-import { getGithubIssue } from "@/lib/tauri";
-import type { GithubIssue } from "@/types/tauri";
+import { useGithubIssue } from "@/hooks/use-github-issues";
 import type { SpaceRouteContext } from "../route";
 
 export const Route = createFileRoute("/space/$spacePath/issues/$issueId")({
@@ -19,45 +17,29 @@ function IssueDetailPage() {
   const { spacePath: encodedPath, issueId } = Route.useParams();
   const { spacePath } = Route.useRouteContext() as SpaceRouteContext;
   const navigate = useNavigate();
-  const [issue, setIssue] = useState<GithubIssue | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const issueNumber = Number(issueId);
   const isValidIssueNumber = Number.isFinite(issueNumber);
 
-  const loadIssue = useCallback(() => {
-    if (!spacePath) {
-      setIsLoading(false);
-      return;
-    }
-    if (!isValidIssueNumber) {
-      setError("Invalid issue id.");
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    requestAnimationFrame(() => {
-      getGithubIssue(spacePath, issueNumber)
-        .then((data) => {
-          setIssue(data);
-        })
-        .catch((err) => {
-          setError(err instanceof Error ? err.message : String(err));
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    });
-  }, [spacePath, issueNumber, isValidIssueNumber]);
-
-  useEffect(() => {
-    void loadIssue();
-  }, [loadIssue]);
+  const { data: issue, isLoading, error, mutate } = useGithubIssue(
+    isValidIssueNumber ? spacePath : undefined,
+    isValidIssueNumber ? issueNumber : undefined
+  );
 
   const updatedAt = issue ? formatTimeAgo(new Date(issue.updatedAt).getTime()) : null;
   const body = issue?.body?.trim();
+
+  if (!isValidIssueNumber) {
+    return (
+      <div className="flex flex-col h-full w-full bg-background/50">
+        <div className="flex-1 w-full max-w-3xl mx-auto flex flex-col px-4 py-6 md:px-8">
+          <div className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">
+            Invalid issue id.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full w-full bg-background/50">
@@ -89,7 +71,7 @@ function IssueDetailPage() {
           <Button
             intent="plain"
             size="sq-sm"
-            onPress={loadIssue}
+            onPress={() => mutate()}
             isDisabled={isLoading}
             aria-label="Refresh issue"
           >
@@ -104,7 +86,7 @@ function IssueDetailPage() {
           </div>
         ) : error ? (
           <div className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">
-            {error}
+            {error instanceof Error ? error.message : String(error)}
           </div>
         ) : issue ? (
           <div className="flex flex-col gap-4">

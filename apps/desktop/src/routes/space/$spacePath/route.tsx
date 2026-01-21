@@ -2,6 +2,7 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnectionStore, useSessionStore } from "@/stores";
+import { useSpaceEvents } from "@/hooks/use-space-events";
 import { decodeSpacePath } from "@/lib/space-path";
 import type { OpenCodeServer } from "@/stores/types";
 
@@ -27,13 +28,11 @@ export const Route = createFileRoute("/space/$spacePath")({
   beforeLoad: async ({ params }) => {
     const spacePath = decodeSpacePath(params.spacePath);
     
-    // Check if server is already running in the store
     const existingPort = useConnectionStore.getState().getPort(spacePath);
     if (existingPort) {
       return { spacePath, port: existingPort };
     }
 
-    // Start the server and wait for it to be ready
     const server = await invoke<OpenCodeServer>("start_opencode_server", { path: spacePath });
     const isReady = await waitForServerReady(server.port);
     
@@ -41,7 +40,6 @@ export const Route = createFileRoute("/space/$spacePath")({
       throw new Error(`Failed to start server for space: ${spacePath}`);
     }
 
-    // Update the store with the new server
     useConnectionStore.setState((state) => ({
       servers: new Map(state.servers).set(server.path, server.port),
       currentSpacePath: spacePath,
@@ -55,17 +53,20 @@ export const Route = createFileRoute("/space/$spacePath")({
 function SpaceLayout() {
   const { spacePath, port } = Route.useRouteContext();
   const { setCurrentSpace } = useConnectionStore();
-  const { fetchSessions } = useSessionStore();
+  const { fetchSessions, getSpaceSessions } = useSessionStore();
+  const { hasFetched } = getSpaceSessions(spacePath);
 
-  // Keep store in sync when navigating between spaces
+  useSpaceEvents({ port, spacePath });
+
   useEffect(() => {
     setCurrentSpace(spacePath);
   }, [spacePath, setCurrentSpace]);
 
-  // Fetch sessions when route loads (port is guaranteed available from beforeLoad)
   useEffect(() => {
-    fetchSessions(port, spacePath);
-  }, [port, spacePath, fetchSessions]);
+    if (!hasFetched) {
+      fetchSessions(port, spacePath);
+    }
+  }, [port, spacePath, fetchSessions, hasFetched]);
 
   return <Outlet />;
 }

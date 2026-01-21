@@ -1,13 +1,12 @@
 import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/ui/loader";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/tabs";
 import { formatTimeAgo } from "@/lib/time";
-import { getGithubIssues } from "@/lib/tauri";
-import { useIssuesStore } from "@/stores";
+import { useGithubIssues } from "@/hooks/use-github-issues";
 import type { SpaceRouteContext } from "./route";
 
 export const Route = createFileRoute("/space/$spacePath/issues")({
@@ -21,62 +20,8 @@ function IssuesPage() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const isDetailRoute = /\/issues\/[^/]+$/.test(pathname);
   const [selectedTab, setSelectedTab] = useState<"open" | "closed">("open");
-  const {
-    issues,
-    isLoading,
-    error,
-    currentSpacePath,
-    setIssues,
-    setLoading,
-    setError,
-    clear,
-  } = useIssuesStore();
 
-  const loadIssues = useCallback(async () => {
-    if (!spacePath) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getGithubIssues(spacePath);
-      const sorted = [...data].sort((a, b) => {
-        const timeA = new Date(a.updatedAt).getTime();
-        const timeB = new Date(b.updatedAt).getTime();
-        return timeB - timeA;
-      });
-      setIssues(sorted, spacePath);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [spacePath, setIssues, setLoading, setError]);
-
-  // Clear issues when space changes
-  useEffect(() => {
-    if (currentSpacePath && currentSpacePath !== spacePath) {
-      clear();
-    }
-  }, [spacePath, currentSpacePath, clear]);
-
-  // Fetch issues on mount - use requestAnimationFrame to ensure UI renders first
-  useEffect(() => {
-    if (isDetailRoute) {
-      return;
-    }
-
-    // Skip if already loading or already fetched for this space (including empty results)
-    if (isLoading || currentSpacePath === spacePath) {
-      return;
-    }
-    
-    // Set loading state immediately so UI shows loader
-    setLoading(true);
-    
-    // Defer the actual fetch to next frame so the loader renders
-    requestAnimationFrame(() => {
-      loadIssues();
-    });
-  }, [spacePath, currentSpacePath, isLoading, setLoading, loadIssues, isDetailRoute]);
+  const { data: issues = [], isLoading, error, mutate } = useGithubIssues(spacePath);
 
   if (isDetailRoute) {
     return <Outlet />;
@@ -100,7 +45,7 @@ function IssuesPage() {
     if (error) {
       return (
         <div className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">
-          {error}
+          {error instanceof Error ? error.message : String(error)}
         </div>
       );
     }
@@ -175,7 +120,7 @@ function IssuesPage() {
 
   return (
     <div className="flex flex-col h-full w-full bg-background/50">
-      <div className="flex-1 w-full max-w-3xl mx-auto flex flex-col px-4 py-6 md:px-8">
+      <div className="flex-1 w-full flex flex-col px-4 py-6 md:px-8">
         <header className="mb-6 flex items-center justify-between border-b border-border/40 pb-4">
           <div className="flex items-baseline gap-3">
             <div className="flex items-center gap-2">
@@ -191,7 +136,7 @@ function IssuesPage() {
           <Button
             intent="plain"
             size="sq-sm"
-            onPress={loadIssues}
+            onPress={() => mutate()}
             isDisabled={isLoading}
             aria-label="Refresh issues"
           >

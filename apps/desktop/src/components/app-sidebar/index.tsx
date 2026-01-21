@@ -1,4 +1,4 @@
-import { type ComponentProps, useState, useEffect } from "react";
+import { type ComponentProps, useState, useEffect, useCallback } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PackageIcon, GitMergeIcon, Add01Icon, PlugSocketIcon, Archive04Icon, GitForkIcon, CheckListIcon, Settings02Icon, Alert02Icon } from "@hugeicons/core-free-icons";
 import { EllipsisHorizontalIcon } from "@heroicons/react/16/solid";
@@ -35,6 +35,7 @@ import { encodeSpacePath } from "@/lib/space-path";
 import { formatTimeAgo } from "@/lib/time";
 import { archiveSpace, checkUncommittedChanges, cloneRepoToSpace, listClonedRepos, validateGitFolder } from "@/lib/tauri";
 import { useChatStore, useConfigStore, useConnectionStore } from "@/stores";
+import { prefetchIssues } from "@/hooks/use-github-issues";
 import type { ClonedRepo } from "@/types/tauri";
 
 interface RepoGroup {
@@ -49,32 +50,18 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
   const [pendingArchivePath, setPendingArchivePath] = useState<string | null>(null);
   const navigate = useNavigate();
   
-  // Subscribe to the spaces state to trigger re-renders when session states change
-  const spaces = useChatStore((state) => state.spaces);
+  const isSpaceActive = useChatStore((state) => state.isSpaceActive);
   
-  // Subscribe to config to trigger re-renders when branch names are updated
   const config = useConfigStore((state) => state.config);
   const addSpaceToConfig = useConfigStore((state) => state.addSpaceToConfig);
   
-  // Get removeServer to clean up connection when archiving
   const removeServer = useConnectionStore((state) => state.removeServer);
   
-  // Check if any session in a space is active (typing or sending)
-  function isSpaceActive(spacePath: string): boolean {
-    const space = spaces[spacePath];
-    if (!space) return false;
-    return Object.values(space.sessions).some(
-      (session) => session.isAssistantTyping || session.isSending
-    );
-  }
-  
-  // Get display name for a space (branch name if available, otherwise random name)
   function getSpaceDisplayName(clonedPath: string, fallbackName: string): string {
     const spaceConfig = config?.spaces.find((s) => s.cloned_path === clonedPath);
     return spaceConfig?.branch_name || spaceConfig?.random_name || fallbackName;
   }
 
-  // Get created_at time for a space
   function getSpaceCreatedAt(clonedPath: string): number | undefined {
     const spaceConfig = config?.spaces.find((s) => s.cloned_path === clonedPath);
     return spaceConfig?.created_at;
@@ -111,7 +98,6 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
       multiple: false,
     });
     if (selected) {
-      // Check if folder is already added
       if (repoGroups.some((group) => group.original_path === selected)) {
         toast.error("This folder has already been added");
         return;
@@ -147,9 +133,7 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
             : group
         )
       );
-      // Add space to config
       await addSpaceToConfig(clonedRepo.cloned_path, clonedRepo.cloned_name);
-      // Navigate to space route with URL-safe base64 encoded path
       const encodedPath = encodeSpacePath(clonedRepo.cloned_path);
       navigate({ to: "/space/$spacePath", params: { spacePath: encodedPath } });
     } catch (error) {
@@ -158,7 +142,6 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
   }
 
   function handleRepoClick(clonedPath: string) {
-    // Navigate to space route with URL-safe base64 encoded path
     const encodedPath = encodeSpacePath(clonedPath);
     navigate({ to: "/space/$spacePath", params: { spacePath: encodedPath } });
   }
@@ -180,7 +163,6 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
   async function doArchive(clonedPath: string) {
     try {
       await archiveSpace(clonedPath);
-      // Remove the server from connection store (Rust already kills the process)
       removeServer(clonedPath);
       setRepoGroups((prev) =>
         prev
@@ -218,6 +200,10 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
     navigate({ to: "/space/$spacePath/issues", params: { spacePath: encodedPath } });
   }
 
+  const handleIssuesHover = useCallback((clonedPath: string) => {
+    prefetchIssues(clonedPath);
+  }, []);
+
   return (
     <Sidebar {...props}>
       <SidebarContent>
@@ -244,6 +230,7 @@ export default function AppSidebar(props: ComponentProps<typeof Sidebar>) {
                 href="#"
                 className="text-muted-fg"
                 onPress={() => handleIssuesClick(group.clones[0]?.cloned_path || "")}
+                onHoverStart={() => handleIssuesHover(group.clones[0]?.cloned_path || "")}
               >
                 <HugeiconsIcon icon={Alert02Icon} data-slot="icon" className="size-4" />
                 <SidebarLabel>Issues</SidebarLabel>

@@ -43,8 +43,7 @@ fn get_config_path() -> Result<std::path::PathBuf, String> {
     Ok(space_dir.join(CONFIG_FILE))
 }
 
-#[tauri::command]
-pub fn get_config() -> Result<AppConfig, String> {
+fn get_config_sync() -> Result<AppConfig, String> {
     let config_path = get_config_path()?;
     if !config_path.exists() {
         return Ok(AppConfig::default());
@@ -54,8 +53,7 @@ pub fn get_config() -> Result<AppConfig, String> {
     serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))
 }
 
-#[tauri::command]
-pub fn save_config(config: AppConfig) -> Result<(), String> {
+fn save_config_sync(config: AppConfig) -> Result<(), String> {
     let config_path = get_config_path()?;
     let content = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
@@ -64,118 +62,164 @@ pub fn save_config(config: AppConfig) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_groq_api_key(api_key: String) -> Result<(), String> {
-    let mut config = get_config()?;
-    config.groq_api_key = Some(api_key);
-    save_config(config)
+pub async fn get_config() -> Result<AppConfig, String> {
+    tauri::async_runtime::spawn_blocking(get_config_sync)
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn clear_groq_api_key() -> Result<(), String> {
-    let mut config = get_config()?;
-    config.groq_api_key = None;
-    save_config(config)
+pub async fn save_config(config: AppConfig) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || save_config_sync(config))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn add_space_to_config(cloned_path: String, random_name: String) -> Result<(), String> {
-    let mut config = get_config()?;
-    if !config.spaces.iter().any(|s| s.cloned_path == cloned_path) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| format!("Failed to get current time: {}", e))?
-            .as_millis() as i64;
-        config.spaces.push(SpaceConfig {
-            cloned_path,
-            random_name,
-            branch_name: None,
-            created_at: Some(now),
-            tasks: Vec::new(),
-        });
-        save_config(config)?;
-    }
-    Ok(())
+pub async fn set_groq_api_key(api_key: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut config = get_config_sync()?;
+        config.groq_api_key = Some(api_key);
+        save_config_sync(config)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn set_space_branch_name(cloned_path: String, branch_name: String) -> Result<(), String> {
-    let mut config = get_config()?;
-    if let Some(space) = config
-        .spaces
-        .iter_mut()
-        .find(|s| s.cloned_path == cloned_path)
-    {
-        space.branch_name = Some(branch_name);
-        save_config(config)?;
-    }
-    Ok(())
+pub async fn clear_groq_api_key() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut config = get_config_sync()?;
+        config.groq_api_key = None;
+        save_config_sync(config)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn get_space_config(cloned_path: String) -> Result<Option<SpaceConfig>, String> {
-    let config = get_config()?;
-    Ok(config
-        .spaces
-        .iter()
-        .find(|s| s.cloned_path == cloned_path)
-        .cloned())
-}
-
-#[tauri::command]
-pub fn add_task(cloned_path: String, text: String) -> Result<Task, String> {
-    let mut config = get_config()?;
-    let task = Task {
-        id: Uuid::new_v4().to_string(),
-        text,
-        completed: false,
-    };
-    if let Some(space) = config
-        .spaces
-        .iter_mut()
-        .find(|s| s.cloned_path == cloned_path)
-    {
-        space.tasks.push(task.clone());
-        save_config(config)?;
-        Ok(task)
-    } else {
-        Err("Space not found".to_string())
-    }
-}
-
-#[tauri::command]
-pub fn remove_task(cloned_path: String, task_id: String) -> Result<(), String> {
-    let mut config = get_config()?;
-    if let Some(space) = config
-        .spaces
-        .iter_mut()
-        .find(|s| s.cloned_path == cloned_path)
-    {
-        space.tasks.retain(|t| t.id != task_id);
-        save_config(config)?;
+pub async fn add_space_to_config(cloned_path: String, random_name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut config = get_config_sync()?;
+        if !config.spaces.iter().any(|s| s.cloned_path == cloned_path) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| format!("Failed to get current time: {}", e))?
+                .as_millis() as i64;
+            config.spaces.push(SpaceConfig {
+                cloned_path,
+                random_name,
+                branch_name: None,
+                created_at: Some(now),
+                tasks: Vec::new(),
+            });
+            save_config_sync(config)?;
+        }
         Ok(())
-    } else {
-        Err("Space not found".to_string())
-    }
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn toggle_task(cloned_path: String, task_id: String) -> Result<(), String> {
-    let mut config = get_config()?;
-    if let Some(space) = config
-        .spaces
-        .iter_mut()
-        .find(|s| s.cloned_path == cloned_path)
-    {
-        if let Some(task) = space.tasks.iter_mut().find(|t| t.id == task_id) {
-            task.completed = !task.completed;
-            save_config(config)?;
+pub async fn set_space_branch_name(cloned_path: String, branch_name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut config = get_config_sync()?;
+        if let Some(space) = config
+            .spaces
+            .iter_mut()
+            .find(|s| s.cloned_path == cloned_path)
+        {
+            space.branch_name = Some(branch_name);
+            save_config_sync(config)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn get_space_config(cloned_path: String) -> Result<Option<SpaceConfig>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = get_config_sync()?;
+        Ok(config
+            .spaces
+            .iter()
+            .find(|s| s.cloned_path == cloned_path)
+            .cloned())
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn add_task(cloned_path: String, text: String) -> Result<Task, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut config = get_config_sync()?;
+        let task = Task {
+            id: Uuid::new_v4().to_string(),
+            text,
+            completed: false,
+        };
+        if let Some(space) = config
+            .spaces
+            .iter_mut()
+            .find(|s| s.cloned_path == cloned_path)
+        {
+            space.tasks.push(task.clone());
+            save_config_sync(config)?;
+            Ok(task)
+        } else {
+            Err("Space not found".to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn remove_task(cloned_path: String, task_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut config = get_config_sync()?;
+        if let Some(space) = config
+            .spaces
+            .iter_mut()
+            .find(|s| s.cloned_path == cloned_path)
+        {
+            space.tasks.retain(|t| t.id != task_id);
+            save_config_sync(config)?;
             Ok(())
         } else {
-            Err("Task not found".to_string())
+            Err("Space not found".to_string())
         }
-    } else {
-        Err("Space not found".to_string())
-    }
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn toggle_task(cloned_path: String, task_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut config = get_config_sync()?;
+        if let Some(space) = config
+            .spaces
+            .iter_mut()
+            .find(|s| s.cloned_path == cloned_path)
+        {
+            if let Some(task) = space.tasks.iter_mut().find(|t| t.id == task_id) {
+                task.completed = !task.completed;
+                save_config_sync(config)?;
+                Ok(())
+            } else {
+                Err("Task not found".to_string())
+            }
+        } else {
+            Err("Space not found".to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -187,30 +231,44 @@ pub struct AsanaTask {
 }
 
 #[tauri::command]
-pub fn set_asana_token(token: String) -> Result<(), String> {
-    let mut config = get_config()?;
-    config.asana_auth = Some(AsanaAuth {
-        access_token: token,
-    });
-    save_config(config)
+pub async fn set_asana_token(token: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut config = get_config_sync()?;
+        config.asana_auth = Some(AsanaAuth {
+            access_token: token,
+        });
+        save_config_sync(config)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn get_asana_auth() -> Result<Option<AsanaAuth>, String> {
-    let config = get_config()?;
-    Ok(config.asana_auth)
+pub async fn get_asana_auth() -> Result<Option<AsanaAuth>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let config = get_config_sync()?;
+        Ok(config.asana_auth)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn disconnect_asana() -> Result<(), String> {
-    let mut config = get_config()?;
-    config.asana_auth = None;
-    save_config(config)
+pub async fn disconnect_asana() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut config = get_config_sync()?;
+        config.asana_auth = None;
+        save_config_sync(config)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
 pub async fn fetch_asana_tasks() -> Result<Vec<AsanaTask>, String> {
-    let config = get_config()?;
+    let config = tauri::async_runtime::spawn_blocking(get_config_sync)
+        .await
+        .map_err(|e| format!("Task failed: {}", e))??;
     let auth = config.asana_auth.ok_or("Not connected to Asana")?;
 
     let client = reqwest::Client::new();

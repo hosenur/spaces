@@ -172,9 +172,176 @@ fn parse_numstat(numstat_output: &str) -> std::collections::HashMap<String, (i32
     stats
 }
 
+#[derive(Serialize)]
+pub struct GitDiffSummary {
+    pub file_path: String,
+    pub additions: i32,
+    pub deletions: i32,
+    pub is_untracked: bool,
+}
+
+fn get_git_diff_summary_sync(path: String) -> Result<Vec<GitDiffSummary>, String> {
+    let space_path = validate_space_path(&path)?;
+    let git_original = space_path.join(".git-original");
+
+    let git_dir_arg = if git_original.exists() {
+        format!("--git-dir={}", git_original.to_str().unwrap())
+    } else {
+        String::new()
+    };
+
+    let mut summaries: Vec<GitDiffSummary> = Vec::new();
+
+    let mut numstat_args = vec!["diff", "--numstat"];
+    if !git_dir_arg.is_empty() {
+        numstat_args.insert(0, &git_dir_arg);
+    }
+
+    let numstat_output = run_command("git", &numstat_args, Some(&space_path))?;
+    if !numstat_output.status.success() {
+        return Err(String::from_utf8_lossy(&numstat_output.stderr).to_string());
+    }
+
+    let numstat_str = String::from_utf8_lossy(&numstat_output.stdout);
+    for line in numstat_str.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 3 {
+            let additions = parts[0].parse::<i32>().unwrap_or(0);
+            let deletions = parts[1].parse::<i32>().unwrap_or(0);
+            let file_path = parts[2].to_string();
+            summaries.push(GitDiffSummary {
+                file_path,
+                additions,
+                deletions,
+                is_untracked: false,
+            });
+        }
+    }
+
+    let mut untracked_args = vec!["ls-files", "--others", "--exclude-standard"];
+    if !git_dir_arg.is_empty() {
+        untracked_args.insert(0, &git_dir_arg);
+    }
+
+    if let Ok(output) = run_command("git", &untracked_args, Some(&space_path)) {
+        if output.status.success() {
+            let untracked_files = String::from_utf8_lossy(&output.stdout);
+            for file_path in untracked_files.lines() {
+                if file_path.is_empty() {
+                    continue;
+                }
+                let full_path = space_path.join(file_path);
+                let line_count = if full_path.is_file() {
+                    let (content, truncated) = read_text_file_snippet(&full_path, MAX_UNTRACKED_BYTES);
+                    content.as_deref().map(|text| {
+                        let mut count = text.lines().count() as i32;
+                        if count == 0 { count = 1; }
+                        if truncated { count += 1; }
+                        count
+                    }).unwrap_or(1)
+                } else {
+                    1
+                };
+                summaries.push(GitDiffSummary {
+                    file_path: file_path.to_string(),
+                    additions: line_count,
+                    deletions: 0,
+                    is_untracked: true,
+                });
+            }
+        }
+    }
+
+    Ok(summaries)
+}
+
 #[tauri::command]
-pub fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
-    let space_path = validate_space_path(path)?;
+pub async fn get_git_diff_summary(path: String) -> Result<Vec<GitDiffSummary>, String> {
+    tauri::async_runtime::spawn_blocking(move || get_git_diff_summary_sync(path))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn get_git_diff_file_sync(path: String, file_path: String) -> Result<GitDiff, String> {
+    let space_path = validate_space_path(&path)?;
+    let git_original = space_path.join(".git-original");
+
+    let git_dir_arg = if git_original.exists() {
+        format!("--git-dir={}", git_original.to_str().unwrap())
+    } else {
+        String::new()
+    };
+
+    let full_path = space_path.join(&file_path);
+    let is_untracked = {
+        let mut status_args = vec!["ls-files", "--others", "--exclude-standard", "--", &file_path];
+        if !git_dir_arg.is_empty() {
+            status_args.insert(0, &git_dir_arg);
+        }
+        let output = run_command("git", &status_args, Some(&space_path))?;
+        output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty()
+    };
+
+    if is_untracked {
+        let (content, truncated) = read_text_file_snippet(&full_path, MAX_UNTRACKED_BYTES);
+        let line_count = content.as_deref().map(|text| {
+            let mut count = text.lines().count() as i32;
+            if count == 0 { count = 1; }
+            if truncated { count += 1; }
+            count
+        }).unwrap_or(1);
+        let diff = format_new_file_diff(&file_path, content.as_deref(), truncated);
+        return Ok(GitDiff {
+            file_path,
+            diff,
+            additions: line_count,
+            deletions: 0,
+        });
+    }
+
+    let mut diff_args = vec!["diff", "--", &file_path];
+    if !git_dir_arg.is_empty() {
+        diff_args.insert(0, &git_dir_arg);
+    }
+
+    let diff_output = run_command("git", &diff_args, Some(&space_path))?;
+    if !diff_output.status.success() {
+        return Err(String::from_utf8_lossy(&diff_output.stderr).to_string());
+    }
+
+    let diff = String::from_utf8_lossy(&diff_output.stdout).to_string();
+
+    let mut numstat_args = vec!["diff", "--numstat", "--", &file_path];
+    if !git_dir_arg.is_empty() {
+        numstat_args.insert(0, &git_dir_arg);
+    }
+
+    let numstat_output = run_command("git", &numstat_args, Some(&space_path))?;
+    let (additions, deletions) = if numstat_output.status.success() {
+        let numstat_str = String::from_utf8_lossy(&numstat_output.stdout);
+        let stats = parse_numstat(&numstat_str);
+        stats.get(&file_path).copied().unwrap_or((0, 0))
+    } else {
+        (0, 0)
+    };
+
+    Ok(GitDiff {
+        file_path,
+        diff,
+        additions,
+        deletions,
+    })
+}
+
+#[tauri::command]
+pub async fn get_git_diff_file(path: String, file_path: String) -> Result<GitDiff, String> {
+    tauri::async_runtime::spawn_blocking(move || get_git_diff_file_sync(path, file_path))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn get_git_diffs_sync(path: String) -> Result<Vec<GitDiff>, String> {
+    let space_path = validate_space_path(&path)?;
     let git_original = space_path.join(".git-original");
 
     let git_dir_arg = if git_original.exists() {
@@ -185,7 +352,6 @@ pub fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
 
     let mut diffs: Vec<GitDiff> = Vec::new();
 
-    // Get numstat for additions/deletions counts
     let mut numstat_args = vec!["diff", "--numstat"];
     if !git_dir_arg.is_empty() {
         numstat_args.insert(0, &git_dir_arg);
@@ -199,7 +365,6 @@ pub fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
     let numstat_str = String::from_utf8_lossy(&numstat_output.stdout);
     let file_stats = parse_numstat(&numstat_str);
 
-    // Get all diffs in a single command
     let mut diff_args = vec!["diff"];
     if !git_dir_arg.is_empty() {
         diff_args.insert(0, &git_dir_arg);
@@ -221,7 +386,6 @@ pub fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
         }
     }
 
-    // Handle untracked files
     let mut untracked_args = vec!["ls-files", "--others", "--exclude-standard"];
     if !git_dir_arg.is_empty() {
         untracked_args.insert(0, &git_dir_arg);
@@ -267,6 +431,13 @@ pub fn get_git_diffs(path: &str) -> Result<Vec<GitDiff>, String> {
     }
 
     Ok(diffs)
+}
+
+#[tauri::command]
+pub async fn get_git_diffs(path: String) -> Result<Vec<GitDiff>, String> {
+    tauri::async_runtime::spawn_blocking(move || get_git_diffs_sync(path))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 fn is_probably_local_path(value: &str) -> bool {

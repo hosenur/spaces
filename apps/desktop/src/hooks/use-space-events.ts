@@ -31,32 +31,11 @@ export function useSpaceEvents({ port, spacePath }: UseSpaceEventsOptions) {
       setIsAssistantTyping(spacePath, sessionId, typing);
     };
 
-    const syncSessionStatuses = async () => {
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/session`);
-        if (!response.ok) return;
-        const sessions = await response.json();
-        if (!isActive || !Array.isArray(sessions)) return;
-        sessions.forEach((session: { id?: string; status?: { type?: string } }) => {
-          if (!session?.id) return;
-          const status = session.status?.type;
-          if (status === "running" || status === "pending") {
-            updateTyping(session.id, true);
-          } else if (status === "idle" || status === "completed" || !status) {
-            updateTyping(session.id, false);
-          }
-        });
-      } catch {
-        // Ignore status sync errors.
-      }
-    };
-
-    syncSessionStatuses();
-
     const url = `http://127.0.0.1:${port}/event?directory=${encodeURIComponent(spacePath)}`;
     const eventSource = new EventSource(url);
 
     eventSource.onmessage = (event) => {
+      if (!isActive) return;
       try {
         const data: SSEEvent = JSON.parse(event.data);
         const eventType = data.type;

@@ -16,11 +16,10 @@ pub struct ClonedRepo {
     pub cloned_name: String,
 }
 
-#[tauri::command]
-pub fn clone_repo_to_space(path: &str) -> Result<ClonedRepo, String> {
+fn clone_repo_to_space_sync(path: String) -> Result<ClonedRepo, String> {
     let space_dir = ensure_space_root()?;
 
-    let original_path = Path::new(path);
+    let original_path = Path::new(&path);
     let original_name = original_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -33,11 +32,12 @@ pub fn clone_repo_to_space(path: &str) -> Result<ClonedRepo, String> {
     let cloned_path = space_dir.join(&cloned_name);
     let cloned_path_str = cloned_path
         .to_str()
-        .ok_or("Invalid cloned path")?;
+        .ok_or("Invalid cloned path")?
+        .to_string();
 
     run_command_checked(
         "git",
-        &["clone", path, cloned_path_str],
+        &["clone", &path, &cloned_path_str],
         None,
         "Failed to clone repository",
     )?;
@@ -72,7 +72,7 @@ pub fn clone_repo_to_space(path: &str) -> Result<ClonedRepo, String> {
 
     run_command_checked(
         "git",
-        &["remote", "add", "original", path],
+        &["remote", "add", "original", &path],
         Some(&cloned_path),
         "Failed to add remote",
     )?;
@@ -105,9 +105,9 @@ pub fn clone_repo_to_space(path: &str) -> Result<ClonedRepo, String> {
         .map_err(|e| format!("Failed to write opencode id: {}", e))?;
 
     let repo = ClonedRepo {
-        original_path: path.to_string(),
+        original_path: path,
         original_name,
-        cloned_path: cloned_path_str.to_string(),
+        cloned_path: cloned_path_str,
         cloned_name,
     };
 
@@ -121,7 +121,13 @@ pub fn clone_repo_to_space(path: &str) -> Result<ClonedRepo, String> {
 }
 
 #[tauri::command]
-pub fn list_cloned_repos() -> Result<Vec<ClonedRepo>, String> {
+pub async fn clone_repo_to_space(path: String) -> Result<ClonedRepo, String> {
+    tauri::async_runtime::spawn_blocking(move || clone_repo_to_space_sync(path))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn list_cloned_repos_sync() -> Result<Vec<ClonedRepo>, String> {
     let space_dir = space_root()?;
 
     if !space_dir.exists() {
@@ -152,8 +158,14 @@ pub fn list_cloned_repos() -> Result<Vec<ClonedRepo>, String> {
 }
 
 #[tauri::command]
-pub fn check_uncommitted_changes(path: &str) -> Result<bool, String> {
-    let space_path = validate_space_path(path)?;
+pub async fn list_cloned_repos() -> Result<Vec<ClonedRepo>, String> {
+    tauri::async_runtime::spawn_blocking(list_cloned_repos_sync)
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn check_uncommitted_changes_sync(path: String) -> Result<bool, String> {
+    let space_path = validate_space_path(&path)?;
     let status_output = run_command_checked(
         "git",
         &["status", "--porcelain"],
@@ -167,7 +179,14 @@ pub fn check_uncommitted_changes(path: &str) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn archive_space(path: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub async fn check_uncommitted_changes(path: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || check_uncommitted_changes_sync(path))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn archive_space(path: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let canonical_path = validate_space_path(&path)?;
     let canonical_path_str = canonical_path.to_string_lossy().to_string();
 
@@ -177,8 +196,11 @@ pub fn archive_space(path: String, state: tauri::State<'_, AppState>) -> Result<
         }
     }
 
-    fs::remove_dir_all(canonical_path)
-        .map_err(|e| format!("Failed to delete space directory: {}", e))?;
-
-    Ok(())
+    let path_to_delete = canonical_path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        fs::remove_dir_all(path_to_delete)
+            .map_err(|e| format!("Failed to delete space directory: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }

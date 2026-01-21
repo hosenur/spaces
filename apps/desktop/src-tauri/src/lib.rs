@@ -14,7 +14,7 @@ use crate::config::{
     get_asana_auth, get_config, get_space_config, remove_task, save_config, set_asana_token,
     set_groq_api_key, set_space_branch_name, toggle_task,
 };
-use crate::git::{get_github_issue, get_github_issues, get_git_diffs, validate_git_folder};
+use crate::git::{get_github_issue, get_github_issues, get_git_diffs, get_git_diff_summary, get_git_diff_file, validate_git_folder};
 use crate::opencode::{
     get_all_opencode_servers, get_opencode_port, start_all_opencode_servers, start_opencode_server,
     AppState,
@@ -71,6 +71,8 @@ pub fn run() {
             greet,
             validate_git_folder,
             get_git_diffs,
+            get_git_diff_summary,
+            get_git_diff_file,
             get_github_issues,
             get_github_issue,
             clone_repo_to_space,

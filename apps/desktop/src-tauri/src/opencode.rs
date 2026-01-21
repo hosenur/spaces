@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -125,14 +125,14 @@ fn shutdown_child_process(path: &str, mut child: Child) {
 }
 
 pub struct AppState {
-    pub(crate) opencode_processes: Mutex<HashMap<String, (Child, u16)>>,
+    pub(crate) opencode_processes: Arc<Mutex<HashMap<String, (Child, u16)>>>,
     shutdown_in_progress: AtomicBool,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
-            opencode_processes: Mutex::new(HashMap::new()),
+            opencode_processes: Arc::new(Mutex::new(HashMap::new())),
             shutdown_in_progress: AtomicBool::new(false),
         }
     }
@@ -167,20 +167,16 @@ pub struct OpenCodeServer {
     pub port: u16,
 }
 
-#[tauri::command]
-pub fn start_opencode_server(
-    path: String,
-    state: tauri::State<'_, AppState>,
+fn start_opencode_server_sync(
+    canonical_path: String,
+    processes: &Mutex<HashMap<String, (Child, u16)>>,
 ) -> Result<OpenCodeServer, String> {
-    let canonical_path = normalize_space_path(&path)?;
-
     loop {
-        let mut processes = state
-            .opencode_processes
+        let mut procs = processes
             .lock()
             .map_err(|e| format!("Failed to lock state: {}", e))?;
 
-        if let Some((child, port)) = processes.get_mut(&canonical_path) {
+        if let Some((child, port)) = procs.get_mut(&canonical_path) {
             let port_value = *port;
             if wait_for_server(child, port_value) {
                 return Ok(OpenCodeServer {
@@ -189,8 +185,8 @@ pub fn start_opencode_server(
                 });
             }
 
-            if let Some((child, _)) = processes.remove(&canonical_path) {
-                drop(processes);
+            if let Some((child, _)) = procs.remove(&canonical_path) {
+                drop(procs);
                 shutdown_child_process(&canonical_path, child);
             }
             continue;
@@ -215,12 +211,27 @@ pub fn start_opencode_server(
             ));
         }
 
-        processes.insert(canonical_path.clone(), (child, port));
+        procs.insert(canonical_path.clone(), (child, port));
         return Ok(OpenCodeServer {
             path: canonical_path,
             port,
         });
     }
+}
+
+#[tauri::command]
+pub async fn start_opencode_server(
+    path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<OpenCodeServer, String> {
+    let canonical_path = normalize_space_path(&path)?;
+    let processes = state.opencode_processes.clone();
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        start_opencode_server_sync(canonical_path, &processes)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
@@ -258,63 +269,13 @@ pub fn get_all_opencode_servers(state: tauri::State<'_, AppState>) -> Vec<OpenCo
 /// Returns the server info or None on failure.
 fn start_server_for_path(
     canonical_path: String,
-    processes: &Mutex<HashMap<String, (Child, u16)>>,
+    processes: &Arc<Mutex<HashMap<String, (Child, u16)>>>,
 ) -> Option<OpenCodeServer> {
-    loop {
-        let mut procs = processes.lock().ok()?;
-
-        if let Some((_, port)) = procs.get_mut(&canonical_path) {
-            let port_value = *port;
-            drop(procs);
-            
-            let mut procs = processes.lock().ok()?;
-            if let Some((child, _)) = procs.get_mut(&canonical_path) {
-                if wait_for_server(child, port_value) {
-                    return Some(OpenCodeServer {
-                        path: canonical_path,
-                        port: port_value,
-                    });
-                }
-            }
-
-            if let Some((child, _)) = procs.remove(&canonical_path) {
-                drop(procs);
-                shutdown_child_process(&canonical_path, child);
-            }
-            continue;
-        }
-
-        let port: u16 = rand::rng().random_range(10000..60000);
-
-        let mut child = Command::new(get_opencode_binary())
-            .args(["serve", "--port", &port.to_string()])
-            .current_dir(&canonical_path)
-            .env("PATH", get_extended_path())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?;
-
-        drop(procs);
-
-        let mut procs = processes.lock().ok()?;
-        if !wait_for_server(&mut child, port) {
-            drop(procs);
-            shutdown_child_process(&canonical_path, child);
-            return None;
-        }
-
-        procs.insert(canonical_path.clone(), (child, port));
-        return Some(OpenCodeServer {
-            path: canonical_path,
-            port,
-        });
-    }
+    start_opencode_server_sync(canonical_path, processes).ok()
 }
 
-#[tauri::command]
-pub fn start_all_opencode_servers(
-    state: tauri::State<'_, AppState>,
+fn start_all_opencode_servers_sync(
+    processes: Arc<Mutex<HashMap<String, (Child, u16)>>>,
 ) -> Result<Vec<OpenCodeServer>, String> {
     let space_dir = space_root()?;
 
@@ -325,7 +286,6 @@ pub fn start_all_opencode_servers(
     let entries = fs::read_dir(&space_dir)
         .map_err(|e| format!("Failed to read ~/.space directory: {}", e))?;
 
-    // Collect all valid space paths first
     let space_paths: Vec<String> = entries
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| {
@@ -342,12 +302,13 @@ pub fn start_all_opencode_servers(
         return Ok(Vec::new());
     }
 
-    // Start all servers in parallel using scoped threads
-    let processes = &state.opencode_processes;
     let servers = thread::scope(|scope| {
         let handles: Vec<_> = space_paths
             .into_iter()
-            .map(|path| scope.spawn(|| start_server_for_path(path, processes)))
+            .map(|path| {
+                let procs = &processes;
+                scope.spawn(move || start_server_for_path(path, procs))
+            })
             .collect();
 
         handles
@@ -357,4 +318,17 @@ pub fn start_all_opencode_servers(
     });
 
     Ok(servers)
+}
+
+#[tauri::command]
+pub async fn start_all_opencode_servers(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<OpenCodeServer>, String> {
+    let processes = state.opencode_processes.clone();
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        start_all_opencode_servers_sync(processes)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }

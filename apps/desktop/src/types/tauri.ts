@@ -5,6 +5,13 @@ export interface GitDiff {
   deletions: number;
 }
 
+export interface GitDiffSummary {
+  file_path: string;
+  additions: number;
+  deletions: number;
+  is_untracked: boolean;
+}
+
 export interface ClonedRepo {
   original_path: string;
   original_name: string;
